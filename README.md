@@ -1,24 +1,23 @@
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/Mardanyxyz/gta6-open-world-20261122/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/Mardanyxyz/gta6-open-world-20261122/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+
 # Solara Bay — an open-world crime game
 
-A complete open-world crime game in the spirit of GTA 6, built from scratch
-for make.fun's **gta6-01** bounty ("Make GTA 6"). It plays offline in a desktop
-browser from static files — no network requests, no libraries, no build step.
+A full open-world crime game in the spirit of GTA 6, built from scratch for the make.fun **gta6-01** bounty ("Make GTA 6"). It runs offline in a desktop browser from static files — no network, no libraries, no build step.
 
-**The city:** Solara Bay, a sun-soaked coastal city with six districts —
-Downtown, the Marina, Old Town, the Industrial Quarter, Beachfront and the
-Hills — plus a bay, a beach, parks, a safehouse and a garage.
+See the bounty: https://make.fun/bounty/gta6-01
 
-**The story:** Rio "Rook" Santana, a getaway driver new in town, works his way
-up from his first stolen car to the biggest score in Solara Bay history across
-six story missions, with dialogue, chases, a street race, a rescue and a museum
-heist. Everything — city, characters, vehicles, names, story, art, sound and
-music — is original. Nothing is taken from Rockstar Games or any other
-commercial game.
+**The city:** Solara Bay, a sun-soaked coastal city with six districts — Downtown, the Marina, Old Town, the Industrial Quarter, Beachfront and the Hills — plus a bay, a beach, parks, a safehouse and a garage.
 
-## Play
+**The story:** Rio "Rook" Santana, a getaway driver new in town, works his way up from his first stolen car to the biggest score in Solara Bay history across six story missions, with dialogue, chases, a street race, a rescue and a museum heist. Everything — city, characters, vehicles, names, story, art, sound and music — is original. Nothing is taken from Rockstar Games or any other commercial game.
 
-Open `game/index.html` in desktop Chrome (or run `node serve.ts` and open
-http://localhost:8080/game/).
+## Run it
+
+- Open `game/index.html` in desktop Chrome, or
+- run `node serve.ts` and open http://localhost:8080/game/
+
+## How to play
 
 | Key | Action |
 | --- | --- |
@@ -37,13 +36,10 @@ http://localhost:8080/game/).
 ## Systems
 
 - **On foot and by car** — distinct handling, car damage, smoke and fire
-- **Traffic and pedestrians** — cars follow the roads, pedestrians stroll the
-  sidewalks and flee from gunfire
+- **Traffic and pedestrians** — cars follow the roads, pedestrians stroll the sidewalks and flee from gunfire
 - **Stealing cars** — take any parked or driven car; the owner calls it in
-- **Wanted system** — 1–5 stars, police pursuit, roadblocks at 3+, a
-  helicopter at 4+, and getting busted
-- **Six story missions** — dialogue, a bank getaway, a street race, a rescue
-  and a museum diamond heist
+- **Wanted system** — 1–5 stars, police pursuit, roadblocks at 3+, a helicopter at 4+, and getting busted
+- **Six story missions** — dialogue, a bank getaway, a street race, a rescue and a museum diamond heist
 - **Combat** — fists, pistol and SMG, plus armed guards who shoot back
 - **HUD + live minimap** — wanted stars, health, money, objectives, speed
 - **Garage and safehouse** — store and repair cars, save and continue
@@ -78,11 +74,7 @@ shots.json          the four screenshots and their scene queries
 
 ## Screenshots
 
-The four dossier screenshots are staged by `shots.js` — each one plays the
-real game forward for a few seconds with an autopilot, so every frame is a
-genuine render of the game: `1-cover.jpg` (getaway through downtown),
-`2-chase.jpg` (five-star chase), `3-mission.jpg` (the warehouse shootout),
-`4-menu.jpg` (the title screen).
+The four dossier screenshots are staged by `shots.js` — each one plays the real game forward for a few seconds with an autopilot, so every frame is a genuine render of the game: `1-cover.jpg` (getaway through downtown), `2-chase.jpg` (five-star chase), `3-mission.jpg` (the warehouse shootout), `4-menu.jpg` (the title screen).
 
 ## License
 
