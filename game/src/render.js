@@ -462,14 +462,10 @@ export function createRenderer(canvas) {
       if (e.x < vis.x0 || e.x > vis.x1 || e.y < vis.y0 || e.y > vis.y1) continue;
       drawPerson(world, e.x, e.y, e.angle, '#a33a2e', 1.1, true);
     }
-    // Mia, when rescued and waiting.
+    // Mia, when rescued and waiting (the marker carries her label).
     if (world.mission && world.mission.data.mia && world.mission.data.stage === 2) {
       const m = world.mission.data.mia;
       drawPerson(world, m.x, m.y, Math.PI / 2, '#e8b23a', 1.05, false);
-      c.fillStyle = '#ffd76a';
-      c.font = 'bold 12px sans-serif';
-      c.textAlign = 'center';
-      c.fillText('MIA', m.x, m.y - 22);
     }
     // The player on foot.
     const p = world.player;
@@ -748,7 +744,7 @@ export function createRenderer(canvas) {
     // Mission banner.
     if (world.missionBanner) {
       const b = world.missionBanner;
-      const a = clamp(1 - Math.max(0, b.t - 2.4) / 0.8, 0, 1);
+      const a = clamp(1 - Math.max(0, b.t - 1.8) / 0.6, 0, 1);
       c.globalAlpha = a;
       c.textAlign = 'center';
       c.fillStyle = 'rgba(0,0,0,0.6)';

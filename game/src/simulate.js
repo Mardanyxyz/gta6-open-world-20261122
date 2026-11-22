@@ -52,7 +52,7 @@ export function stepGame(world, controls, dt, audio) {
   // Mission banner timer.
   if (world.missionBanner) {
     world.missionBanner.t += dt;
-    if (world.missionBanner.t > 3.4) world.missionBanner = null;
+    if (world.missionBanner.t > 2.4) world.missionBanner = null;
   }
   if (world.saveFlash) world.saveFlash -= dt;
   if (world.pendingNext !== undefined && world.pendingNext > 0) world.pendingNext -= dt;

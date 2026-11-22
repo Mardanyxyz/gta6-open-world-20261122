@@ -20,8 +20,10 @@ export function stepPolice(world, dt) {
 
   // Spawn / despawn pursuit cars to match the wanted level.
   const want = wanted === 0 ? 0 : Math.min(8, wanted * WANTED.copCarsPerStar);
+  const cap = world.copCap ?? want;
+  const target = Math.min(want, cap);
   const alive = world.cops.filter((c) => !c.dead);
-  if (alive.length < want) {
+  if (alive.length < target) {
     const car = makeCar('police', 0, 0, 0, '#1c2733', 'police', rng);
     // Drop in a few blocks away, on a road, heading toward the player.
     const p = world.city.randomRoadPoint(rng);
@@ -40,19 +42,34 @@ export function stepPolice(world, dt) {
   }
   if (wanted === 0) {
     for (const cop of world.cops) {
-      if (!cop.dead) cop.driver = 'traffic'; // give up, blend back into traffic
+      if (!cop.dead) {
+        // Give up and pull over: a parked cop car, never a traffic car
+        // (traffic cars need a route, which a pursuit car never had).
+        cop.driver = 'parked';
+        cop.speed = 0;
+      }
     }
-    world.cops = world.cops.filter((c) => !c.dead && dist(c.x, c.y, pp.x, pp.y) < 1600);
+    world.cops = [];
+    // Do not litter the city with parked cruisers.
+    const parkedCops = world.cars.filter((c) => c.driver === 'parked' && c.type === 'police');
+    for (let i = 0; i < parkedCops.length - 4; i += 1) {
+      world.cars.splice(world.cars.indexOf(parkedCops[i]), 1);
+    }
     world.roadblocks = [];
     world.heli = null;
   }
   world.cops = world.cops.filter((c) => !c.dead);
 
-  // Pursuit: steer at the player, ram, and keep pace.
-  for (const cop of world.cops) {
+  // Pursuit: each cop aims for its own slot around the player, so the pack
+  // surrounds the car instead of piling onto one point and hiding it.
+  for (let ci = 0; ci < world.cops.length; ci += 1) {
+    const cop = world.cops[ci];
     if (cop.dead) continue;
     cop.siren += dt;
-    const target = angleTo(cop.x, cop.y, pp.x, pp.y);
+    const slot = (ci / Math.max(1, world.cops.length)) * Math.PI * 2 + world.time * 0.25;
+    const tx = pp.x + Math.cos(slot) * 74;
+    const ty = pp.y + Math.sin(slot) * 74;
+    const target = angleTo(cop.x, cop.y, tx, ty);
     const d = dist(cop.x, cop.y, pp.x, pp.y);
     const diff = angleDiff(cop.angle, target);
     const steer = clamp(diff * 2.2, -1, 1);
@@ -87,8 +104,28 @@ export function stepPolice(world, dt) {
     }
   }
 
+  // Cops keep their distance from each other — no pile-ups.
+  for (let i = 0; i < world.cops.length; i += 1) {
+    for (let j = i + 1; j < world.cops.length; j += 1) {
+      const a = world.cops[i];
+      const b = world.cops[j];
+      if (a.dead || b.dead) continue;
+      const d = dist(a.x, a.y, b.x, b.y);
+      if (d < 58 && d > 0.01) {
+        const push = (58 - d) / 2;
+        const nx = (b.x - a.x) / d;
+        const ny = (b.y - a.y) / d;
+        a.x -= nx * push;
+        a.y -= ny * push;
+        b.x += nx * push;
+        b.y += ny * push;
+      }
+    }
+  }
+
   // Roadblocks at wanted 3+: parked cop cars across the road ahead of you.
-  if (wanted >= WANTED.roadblockAt) {
+  // (Staged screenshot scenes set world.noRoadblocks to keep the chase clean.)
+  if (wanted >= WANTED.roadblockAt && !world.noRoadblocks) {
     if (world.roadblocks.length === 0 && chance(rng, dt * 0.5)) {
       const heading = world.player.inCar ? world.player.inCar.angle : world.player.angle;
       const bx = pp.x + Math.cos(heading) * 620;

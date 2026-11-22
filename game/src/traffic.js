@@ -15,13 +15,13 @@ function assignRoute(car, rng, city) {
     const i = int(rng, 0, WORLD.cols);
     const dir = chance(rng, 0.5) ? 1 : -1; // +1 = southbound
     car.route = { kind: 'v', index: i, dir };
-    car.x = vRoadX(i) + (dir > 0 ? 24 : -24);
+    car.x = vRoadX(i) + (i === 0 ? 24 : i === WORLD.cols ? -24 : (dir > 0 ? 24 : -24));
     car.angle = dir > 0 ? Math.PI / 2 : -Math.PI / 2;
   } else {
     const j = int(rng, 0, WORLD.rows);
     const dir = chance(rng, 0.5) ? 1 : -1; // +1 = eastbound
     car.route = { kind: 'h', index: j, dir };
-    car.y = hRoadY(j) + (dir > 0 ? 24 : -24);
+    car.y = hRoadY(j) + (j === 0 ? 24 : j === WORLD.rows ? -24 : (dir > 0 ? 24 : -24));
     car.angle = dir > 0 ? 0 : Math.PI;
   }
   car.targetSpeed = range(rng, 150, 240);
@@ -109,6 +109,11 @@ export function stepTraffic(world, dt) {
   const rng = world.rng;
   for (const car of world.cars) {
     if (car.driver !== 'traffic' || car.dead) continue;
+    // A traffic car always has a route; if it somehow lost it, give it one.
+    if (!car.route) {
+      assignRoute(car, rng, world.city);
+      continue;
+    }
     // Ease toward the target speed; brake for the car ahead.
     const ahead = carAhead(world, car);
     let want = car.targetSpeed;

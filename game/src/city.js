@@ -220,14 +220,15 @@ export function buildCity(seed) {
   city.randomRoadPoint = function randomRoadPoint(rng) {
     if (chance(rng, 0.5)) {
       const i = int(rng, 0, cols);
-      const y = range(rng, 60, WORLD.height - 60);
       const dir = chance(rng, 0.5) ? Math.PI / 2 : -Math.PI / 2;
-      return { x: vRoadX(i) + (dir > 0 ? 22 : -22), y, angle: dir };
+      // Keep the lane inside the world on the edge roads.
+      const lane = i === 0 ? 22 : i === cols ? -22 : (dir > 0 ? 22 : -22);
+      return { x: vRoadX(i) + lane, y: range(rng, 60, WORLD.height - 60), angle: dir };
     }
     const j = int(rng, 0, rows);
-    const x = range(rng, 60, WORLD.sandX - 60);
     const dir = chance(rng, 0.5) ? 0 : Math.PI;
-    return { x, y: hRoadY(j) + (dir === 0 ? 22 : -22), angle: dir };
+    const lane = j === 0 ? 22 : j === rows ? -22 : (dir === 0 ? 22 : -22);
+    return { x: range(rng, 60, WORLD.sandX - 60), y: hRoadY(j) + lane, angle: dir };
   };
 
   return city;

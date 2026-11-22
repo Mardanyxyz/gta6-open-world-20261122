@@ -50,16 +50,17 @@ if (shotName) {
     const aimWorldX = world.camera.x + (input.mouseX - w / 2);
     const aimWorldY = world.camera.y + (input.mouseY - h / 2);
     const aim = Math.atan2(aimWorldY - world.player.y, aimWorldX - world.player.x);
+    const ePressed = input.wasPressed('KeyE'); // read once: E is enter + interact + garage
     return {
       move: axis,
       aim,
-      fire: input.mouseClicked,
+      fire: input.clicked(),
       fireHeld: input.mouseDown,
       handbrake: input.isDown('Space'),
       sprint: input.isDown('ShiftLeft') || input.isDown('ShiftRight'),
-      enter: input.wasPressed('KeyE'),
-      interact: input.wasPressed('KeyE'),
-      garage: input.wasPressed('KeyE'),
+      enter: ePressed,
+      interact: ePressed,
+      garage: ePressed,
       weapon: input.wasPressed('Digit1') ? 'fists'
         : input.wasPressed('Digit2') ? 'pistol'
         : input.wasPressed('Digit3') ? 'smg' : null,
@@ -71,7 +72,7 @@ if (shotName) {
   }
 
   function clickButton() {
-    if (!input.mouseClicked) return null;
+    if (!input.clicked()) return null;
     for (const b of renderer.buttons) {
       if (input.mouseX >= b.x && input.mouseX <= b.x + b.w && input.mouseY >= b.y && input.mouseY <= b.y + b.h) {
         return b.action;
@@ -123,13 +124,27 @@ if (shotName) {
     } else if (screen === 'play') {
       if (input.wasPressed('KeyP') || input.wasPressed('Escape')) {
         screen = 'pause';
-      } else {
+      } else if (acc >= STEP) {
+        // Build the controls only when a step will actually run: building
+        // them consumes the one-shot keys, and a frame with no step would
+        // swallow a tap of E entirely.
+        const controls = buildControls();
         let steps = 0;
         while (acc >= STEP && steps < 5) {
-          const controls = buildControls();
           const result = stepGame(world, controls, STEP, audio);
           acc -= STEP;
           steps += 1;
+          // One-shot keys are consumed by the first step of the frame, so a
+          // slow frame running two steps never enters AND exits a car.
+          controls.enter = false;
+          controls.interact = false;
+          controls.garage = false;
+          controls.fire = false;
+          controls.weapon = null;
+          controls.reload = false;
+          controls.radio = false;
+          controls.mute = false;
+          controls.save = false;
           if (result === 'won') {
             screen = 'won';
             break;

@@ -285,9 +285,19 @@ export const MISSIONS = [
     start(world) {
       const w = world.city.specials.warehouse;
       world.mission.data = { stage: 0, guardsLeft: 6, mia: null };
-      for (let i = 0; i < 6; i += 1) {
-        const a = (i / 6) * Math.PI * 2;
-        spawnEnemy(world, w.cx + Math.cos(a) * 170, w.cy + Math.sin(a) * 130, { health: 70, role: 'viper' });
+      // Guards hold the yard around the warehouse — outside its walls, so
+      // they are visible and can move. Three at the south door, the rest on
+      // the flanks and the north side.
+      const spots = [
+        { x: w.cx - 120, y: w.y + w.h + 46 },
+        { x: w.cx, y: w.y + w.h + 46 },
+        { x: w.cx + 120, y: w.y + w.h + 46 },
+        { x: w.x - 46, y: w.cy },
+        { x: w.x + w.w + 46, y: w.cy },
+        { x: w.cx, y: w.y - 46 },
+      ];
+      for (const s of spots) {
+        spawnEnemy(world, s.x, s.y, { health: 70, role: 'viper' });
       }
     },
     objective(world) {
@@ -316,7 +326,7 @@ export const MISSIONS = [
         if (left === 0) {
           d.stage = 2;
           const w = world.city.specials.warehouse;
-          d.mia = { x: w.cx, y: w.cy - 40 };
+          d.mia = { x: w.doorX, y: w.doorY + 26 };
           addMessage(world, 'MIA: Rook! I knew you would come!', '#8fd6a0');
         }
       } else if (d.stage === 2) {

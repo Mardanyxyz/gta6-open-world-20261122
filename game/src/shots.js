@@ -43,6 +43,9 @@ function makeDriver(waypoints) {
 
 function putPlayerInCar(world, type, x, y, angle, color) {
   const car = makeCar(type, x, y, angle, color, 'player', world.rng);
+  // Staged scenes run a long sim under police fire: the hero car is
+  // effectively invulnerable so the frame still shows a chase, not a wreck.
+  car.health = 10000;
   world.cars.push(car);
   world.player.inCar = car;
   world.player.x = x;
@@ -55,7 +58,8 @@ function putPlayerInCar(world, type, x, y, angle, color) {
 
 function addCopBehind(world, x, y, angle) {
   const car = makeCar('police', x, y, angle, '#1c2733', 'police', world.rng);
-  car.speed = 320;
+  car.speed = 520;
+  car.maxSpeed = 720; // staged pursuit cars keep up with the hero car
   world.cars.push(car);
   world.cops.push(car);
   return car;
@@ -91,6 +95,8 @@ export function stageShot(name, world) {
   world.missionsDone = 2;
   if (name === 'chase') {
     world.hour = 18.7;
+    world.copCap = 4;
+    world.noRoadblocks = true;
     putPlayerInCar(world, 'muscle', 4480, 900, Math.PI / 2, '#7a2e8f');
     world.wanted = 5;
     world.wantedTimer = 60;
@@ -98,26 +104,27 @@ export function stageShot(name, world) {
     world.mission.data.stage = 2;
     world.mission.data.hasDiamond = true;
     world.dialogue = null;
-    addCopBehind(world, 4480, 620, Math.PI / 2);
-    addCopBehind(world, 4420, 560, Math.PI / 2);
-    addCopBehind(world, 4540, 700, Math.PI / 2);
+    addCopBehind(world, 4480, 680, Math.PI / 2);
+    addCopBehind(world, 4420, 620, Math.PI / 2);
+    addCopBehind(world, 4540, 740, Math.PI / 2);
     const drive = makeDriver([
       { x: 4480, y: 1120 }, { x: 4480, y: 2240 }, { x: 2800, y: 2240 },
       { x: 2800, y: 1120 },
     ]);
-    stepN(world, () => drive(world), 12);
+    stepN(world, () => drive(world), 2.5);
     return 'play';
   }
   if (name === 'mission') {
-    world.hour = 19.6;
+    world.hour = 18.9;
     startMission(world, 4);
     world.mission.data.stage = 1;
     world.dialogue = null;
-    // Three guards in view for the frame.
-    world.enemies = world.enemies.slice(0, 3);
+    // Five guards in view for the frame; a short sim so the shootout is
+    // still raging when the frame is taken.
+    world.enemies = world.enemies.slice(0, 5);
     const w = world.city.specials.warehouse;
-    world.player.x = w.cx - 260;
-    world.player.y = w.cy + 150;
+    world.player.x = w.cx - 220;
+    world.player.y = w.cy + 120;
     world.player.weapon = 'pistol';
     if (!world.player.weapons.includes('pistol')) world.player.weapons.push('pistol');
     world.player.ammo.pistol = 24;
@@ -138,7 +145,7 @@ export function stageShot(name, world) {
       const mx = Math.cos(toward) * (best > 200 ? 1 : 0);
       const my = Math.sin(toward) * (best > 200 ? 1 : 0);
       return { move: { x: mx, y: my }, aim, fire: best < 420, sprint: false };
-    }, 4);
+    }, 2.5);
     return 'play';
   }
   if (name === 'menu') {
@@ -150,6 +157,8 @@ export function stageShot(name, world) {
   }
   // Default: cover — a getaway through downtown at golden hour.
   world.hour = 16.4;
+  world.copCap = 3;
+  world.noRoadblocks = true;
   putPlayerInCar(world, 'sports', 1680, 560, 0, '#3a7bd5');
   world.wanted = 3;
   world.wantedTimer = 60;
@@ -157,12 +166,12 @@ export function stageShot(name, world) {
   world.mission.data.stage = 2;
   world.mission.data.cps = 0;
   world.dialogue = null;
-  addCopBehind(world, 1400, 560, 0);
-  addCopBehind(world, 1330, 600, 0);
+  addCopBehind(world, 1530, 560, 0);
+  addCopBehind(world, 1470, 600, 0);
   const drive = makeDriver([
     { x: 2240, y: 560 }, { x: 3920, y: 560 }, { x: 3920, y: 1680 },
     { x: 2240, y: 1680 },
   ]);
-  stepN(world, () => drive(world), 15);
+  stepN(world, () => drive(world), 3);
   return 'play';
 }
