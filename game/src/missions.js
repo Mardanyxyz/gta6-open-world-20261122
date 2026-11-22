@@ -1,12 +1,13 @@
 // The story of Solara Bay: six missions for Rio "Rook" Santana, from his
 // first stolen car to the biggest score in the city's history.
-// Each mission is a small state machine: start() sets it up, update() returns
-// 'done' when the last step lands, objective() is the HUD line, and marker()
-// is the yellow blip on the minimap and the arrow on screen. Between missions
-// the next one waits at the safehouse — walk into the M marker to start it.
+// Each mission is a small state machine: start() sets it up, update()
+// returns 'done' when the last step lands, objective() is the HUD line, and
+// marker() is the yellow blip on the minimap and the arrow on screen.
+// Between missions the next one waits at the safehouse — walk into the M
+// marker to start it.
 
 import { WORLD } from './config.js';
-import { range, int, dist, angleTo } from './random.js';
+import { range, dist, angleTo } from './random.js';
 import { makeCar, addWanted, addMessage, playerPos, playerDist, spawnParticles } from './world.js';
 import { giveWeapon, spawnEnemy } from './combat.js';
 import { clearHeat } from './police.js';
@@ -30,9 +31,14 @@ function markerAt(world, x, y, label) {
   return { x, y, label: label ?? '' };
 }
 
+// The street-race loop: six gates around the middle of the city.
 const RACE_POINTS = [
   { x: 2800, y: 280 }, { x: 4480, y: 280 }, { x: 4480, y: 1680 },
   { x: 2800, y: 1680 }, { x: 1120, y: 1680 }, { x: 1120, y: 280 },
+];
+
+const ESCAPE_POINTS = [
+  { x: 1120, y: 280 }, { x: 4480, y: 2800 }, { x: 280, y: 2800 },
 ];
 
 export const MISSIONS = [
@@ -55,7 +61,8 @@ export const MISSIONS = [
     },
     marker(world) {
       if (world.mission.data.stage === 0) return null;
-      return markerAt(world, world.city.specials.garage.doorX, world.city.specials.garage.doorY, 'GARAGE');
+      const g = world.city.specials.garage;
+      return markerAt(world, g.doorX, g.doorY, 'GARAGE');
     },
     update(world) {
       const d = world.mission.data;
@@ -106,7 +113,7 @@ export const MISSIONS = [
       } else if (d.stage === 1) {
         if (!world.player.inCar && playerDist(world, s.docks.cx, s.docks.cy) < 70 && world.inputAction) {
           d.stage = 2;
-          world.mission.data.hasPackage = true;
+          d.hasPackage = true;
           addMessage(world, 'Package secured. Move!', '#ffd76a');
         }
       } else if (d.stage === 2) {
@@ -144,10 +151,8 @@ export const MISSIONS = [
       const d = world.mission.data;
       const s = world.city.specials;
       if (d.stage === 0 || d.stage === 1) return markerAt(world, s.bank.doorX, s.bank.doorY, 'BANK');
-      const cps = [
-        { x: 1120, y: 280 }, { x: 4480, y: 2800 }, { x: 280, y: 2800 },
-      ];
-      return markerAt(world, cps[Math.min(d.cps, 2)].x, cps[Math.min(d.cps, 2)].y, `ESCAPE ${d.cps + 1}/3`);
+      const cp = ESCAPE_POINTS[Math.min(d.cps, 2)];
+      return markerAt(world, cp.x, cp.y, `ESCAPE ${d.cps + 1}/3`);
     },
     update(world, dt) {
       const d = world.mission.data;
@@ -168,10 +173,7 @@ export const MISSIONS = [
           addMessage(world, 'GO GO GO! Lose them!', '#ff5a4e');
         }
       } else if (d.stage === 2) {
-        const cps = [
-          { x: 1120, y: 280 }, { x: 4480, y: 2800 }, { x: 280, y: 2800 },
-        ];
-        const cp = cps[d.cps];
+        const cp = ESCAPE_POINTS[d.cps];
         if (playerDist(world, cp.x, cp.y) < 110) {
           d.cps += 1;
           spawnParticles(world, cp.x, cp.y, 20, '#ffd76a', 200, 0.7, 4);
@@ -195,13 +197,12 @@ export const MISSIONS = [
       { who: 'MIA', text: 'Vex plays dirty, Rook. Her drivers will ram you. Just stay on the gates — follow the yellow markers — and do not let them push you into a wall.' },
     ],
     start(world) {
-      const rng = world.rng;
       world.mission.data = { stage: 0, cp: 0, finished: null, rivalsDone: 0 };
       world.race = { checkpoints: RACE_POINTS, rivals: [], rivalCp: [0, 0, 0], done: [false, false, false] };
       const start = { x: 2800, y: 840 };
       const colors = ['#a33a5c', '#2e8f7a', '#d56a3a'];
       for (let i = 0; i < 3; i += 1) {
-        const car = makeCar('sports', start.x - 90 - i * 80, start.y + (i - 1) * 90, 0, colors[i], 'rival', rng);
+        const car = makeCar('sports', start.x - 90 - i * 80, start.y + (i - 1) * 90, 0, colors[i], 'rival', world.rng);
         car.targetSpeed = 400 + i * 15;
         world.cars.push(car);
         world.race.rivals.push(car);
@@ -242,8 +243,13 @@ export const MISSIONS = [
         car.speed += (car.targetSpeed - car.speed) * dt * 0.8;
         const nx = car.x + Math.cos(car.angle) * car.speed * dt;
         const ny = car.y + Math.sin(car.angle) * car.speed * dt;
-        if (!world.city.hitsBuilding(nx, ny, 26)) { car.x = nx; car.y = ny; }
-        else { car.speed *= 0.4; car.angle += 0.9 * dt * 8; }
+        if (!world.city.hitsBuilding(nx, ny, 26)) {
+          car.x = nx;
+          car.y = ny;
+        } else {
+          car.speed *= 0.4;
+          car.angle += 0.9 * dt * 8;
+        }
         if (dist(car.x, car.y, cp.x, cp.y) < 110) {
           race.rivalCp[i] += 1;
           if (race.rivalCp[i] >= RACE_POINTS.length) {
@@ -262,8 +268,12 @@ export const MISSIONS = [
           d.finished = true;
           const place = d.rivalsDone + 1;
           const payouts = [2500, 1200, 600, 300];
-          world.mission.data.racePayout = payouts[place - 1];
-          addMessage(world, place === 1 ? 'YOU WIN THE RACE!' : `You finished #${place}`, place === 1 ? '#ffd76a' : '#ffffff');
+          d.racePayout = payouts[place - 1];
+          addMessage(
+            world,
+            place === 1 ? 'YOU WIN THE RACE!' : `You finished #${place}`,
+            place === 1 ? '#ffd76a' : '#ffffff',
+          );
           for (const car of race.rivals) car.driver = 'traffic';
           world.race = null;
           return 'done';
@@ -296,9 +306,7 @@ export const MISSIONS = [
         { x: w.x + w.w + 46, y: w.cy },
         { x: w.cx, y: w.y - 46 },
       ];
-      for (const s of spots) {
-        spawnEnemy(world, s.x, s.y, { health: 70, role: 'viper' });
-      }
+      for (const s of spots) spawnEnemy(world, s.x, s.y, { health: 70, role: 'viper' });
     },
     objective(world) {
       const d = world.mission.data;
@@ -326,6 +334,7 @@ export const MISSIONS = [
         if (left === 0) {
           d.stage = 2;
           const w = world.city.specials.warehouse;
+          // Mia waits by the south door — in the open yard, never inside a wall.
           d.mia = { x: w.doorX, y: w.doorY + 26 };
           addMessage(world, 'MIA: Rook! I knew you would come!', '#8fd6a0');
         }
@@ -399,7 +408,7 @@ export function startMission(world, index) {
   setDialogue(world, def.briefing);
 }
 
-/** Complete the active mission: payout, respect, banner. Returns true. */
+/** Complete the active mission: payout, respect, banner. */
 export function completeMission(world) {
   const m = world.mission;
   const payout = m.data.racePayout ?? m.def.payout;
@@ -410,7 +419,6 @@ export function completeMission(world) {
   world.missionBanner = { title: `${m.def.title} — COMPLETE`, giver: `+$${payout}`, t: 0 };
   world.mission = null;
   world.pendingNext = 2.5; // seconds until the next mission marker appears
-  // A small bonus pickup shower at the safehouse.
   return true;
 }
 

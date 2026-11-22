@@ -1,7 +1,8 @@
 // Traffic and pedestrians: the city breathing on its own.
-// Traffic cars drive their lane down a road, pick a new direction at every
-// intersection, brake for the car ahead and swerve around wrecks. Pedestrians
-// stroll the sidewalks and sprint away from gunfire, sirens and speeding cars.
+// Traffic cars hold their lane down a road, pick a new direction at every
+// intersection, brake for the car ahead and nudge around wrecks.
+// Pedestrians stroll the sidewalks and sprint away from gunfire, sirens
+// and speeding cars.
 
 import { WORLD, TRAFFIC_COUNT, PED_COUNT } from './config.js';
 import { range, int, pick, chance, clamp, dist, angleDiff, angleTo } from './random.js';
@@ -10,18 +11,27 @@ import { vRoadX, hRoadY, isRoadAt } from './city.js';
 
 const { pitch, road } = WORLD;
 
-function assignRoute(car, rng, city) {
+const TRAFFIC_TYPES = ['sedan', 'sedan', 'coupe', 'taxi', 'van', 'truck', 'muscle'];
+
+function laneOffset(index, max, dir) {
+  // Right-hand lane, clamped inside the world on the edge roads.
+  if (index === 0) return 24;
+  if (index === max) return -24;
+  return dir > 0 ? 24 : -24;
+}
+
+function assignRoute(car, rng) {
   if (chance(rng, 0.5)) {
     const i = int(rng, 0, WORLD.cols);
     const dir = chance(rng, 0.5) ? 1 : -1; // +1 = southbound
     car.route = { kind: 'v', index: i, dir };
-    car.x = vRoadX(i) + (i === 0 ? 24 : i === WORLD.cols ? -24 : (dir > 0 ? 24 : -24));
+    car.x = vRoadX(i) + laneOffset(i, WORLD.cols, dir);
     car.angle = dir > 0 ? Math.PI / 2 : -Math.PI / 2;
   } else {
     const j = int(rng, 0, WORLD.rows);
     const dir = chance(rng, 0.5) ? 1 : -1; // +1 = eastbound
     car.route = { kind: 'h', index: j, dir };
-    car.y = hRoadY(j) + (j === 0 ? 24 : j === WORLD.rows ? -24 : (dir > 0 ? 24 : -24));
+    car.y = hRoadY(j) + laneOffset(j, WORLD.rows, dir);
     car.angle = dir > 0 ? 0 : Math.PI;
   }
   car.targetSpeed = range(rng, 150, 240);
@@ -30,28 +40,34 @@ function assignRoute(car, rng, city) {
 export function initTraffic(world) {
   const rng = world.rng;
   for (let i = 0; i < TRAFFIC_COUNT; i += 1) {
-    const type = pick(rng, ['sedan', 'sedan', 'coupe', 'taxi', 'van', 'truck', 'muscle']);
     const p = world.city.randomRoadPoint(rng);
-    const car = makeCar(type, p.x, p.y, p.angle, pick(rng, [
-      '#c94f43', '#e8b23a', '#3a7bd5', '#4fae62', '#8a8f98', '#e8e4da',
-      '#7a2e8f', '#2e8f7a', '#d56a3a', '#37415c', '#a33a5c',
-    ]), 'traffic', rng);
-    assignRoute(car, rng, world.city);
-    car.x = p.x; car.y = p.y; car.angle = p.angle;
+    const car = makeCar(
+      pick(rng, TRAFFIC_TYPES), p.x, p.y, p.angle,
+      pick(rng, [
+        '#c94f43', '#e8b23a', '#3a7bd5', '#4fae62', '#8a8f98', '#e8e4da',
+        '#7a2e8f', '#2e8f7a', '#d56a3a', '#37415c', '#a33a5c',
+      ]),
+      'traffic', rng,
+    );
+    assignRoute(car, rng);
+    car.x = p.x;
+    car.y = p.y;
+    car.angle = p.angle;
     world.cars.push(car);
   }
   for (let i = 0; i < PED_COUNT; i += 1) {
     const p = world.city.randomRoadPoint(rng);
     const side = chance(rng, 0.5) ? 1 : -1;
-    const ped = spawnPed(world, p.x + range(rng, -60, 60) + side * 60, p.y + range(rng, -60, 60), rng);
-    ped.state = 'walk';
+    spawnPed(world, p.x + range(rng, -60, 60) + side * 60, p.y + range(rng, -60, 60), rng);
   }
 }
 
 function atIntersection(car) {
   const rx = car.x % pitch;
   const ry = car.y % pitch;
-  return (rx < road / 2 + 30 || rx > pitch - road / 2 - 30) && (ry < road / 2 + 30 || ry > pitch - road / 2 - 30);
+  const nearV = rx < road / 2 + 30 || rx > pitch - road / 2 - 30;
+  const nearH = ry < road / 2 + 30 || ry > pitch - road / 2 - 30;
+  return nearV && nearH;
 }
 
 function pickNewRoute(car, rng) {
@@ -62,7 +78,6 @@ function pickNewRoute(car, rng) {
     const col = cur.index;
     const row = Math.round(car.y / pitch);
     if (r < 0.6) {
-      // straight on
       car.route = { kind: 'v', index: col, dir: cur.dir };
       car.angle = cur.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
     } else if (r < 0.8) {
@@ -86,9 +101,9 @@ function pickNewRoute(car, rng) {
       car.angle = -Math.PI / 2;
     }
   }
-  // Snap to the new lane.
-  if (car.route.kind === 'v') car.x = vRoadX(car.route.index) + (car.route.dir > 0 ? 24 : -24);
-  else car.y = hRoadY(car.route.index) + (car.route.dir > 0 ? 24 : -24);
+  // Snap onto the new lane.
+  if (car.route.kind === 'v') car.x = vRoadX(car.route.index) + laneOffset(car.route.index, WORLD.cols, car.route.dir);
+  else car.y = hRoadY(car.route.index) + laneOffset(car.route.index, WORLD.rows, car.route.dir);
   car.targetSpeed = range(rng, 150, 240);
 }
 
@@ -111,7 +126,7 @@ export function stepTraffic(world, dt) {
     if (car.driver !== 'traffic' || car.dead) continue;
     // A traffic car always has a route; if it somehow lost it, give it one.
     if (!car.route) {
-      assignRoute(car, rng, world.city);
+      assignRoute(car, rng);
       continue;
     }
     // Ease toward the target speed; brake for the car ahead.
@@ -153,7 +168,8 @@ export function stepPeds(world, dt) {
     if (ped.dead) continue;
     ped.t += dt;
     // Panic: run from gunfire, sirens and speeding cars.
-    const nearDanger = playerDist(world, ped.x, ped.y) < 260 && (world.player.inCar ? Math.abs(world.player.inCar.speed) > 300 : false);
+    const speedingBy = world.player.inCar && Math.abs(world.player.inCar.speed) > 300;
+    const nearDanger = playerDist(world, ped.x, ped.y) < 260 && speedingBy;
     const gunfire = world.bullets.length > 0 && dist(ped.x, ped.y, world.player.x, world.player.y) < 500;
     if (nearDanger || gunfire || (world.wanted > 0 && dist(ped.x, ped.y, pp.x, pp.y) < 200)) {
       ped.panic = 2.5;
@@ -180,7 +196,7 @@ export function stepPeds(world, dt) {
     } else {
       ped.angle += Math.PI / 2;
     }
-    // Keep peds off the middle of roads when strolling: nudge toward sidewalk.
+    // Keep strolling peds off the middle of the road: nudge toward the sidewalk.
     if (ped.state === 'walk' && isRoadAt(ped.x, ped.y) && chance(rng, 0.01)) ped.angle += Math.PI / 2;
     // Run over by a fast car.
     const car = world.player.inCar;

@@ -4,7 +4,7 @@
 // (?shot=cover|chase|mission|menu) it stages one deterministic scene, renders
 // it once, and stops — that frame is what the dossier ships.
 
-import { STEP } from './config.js';
+import { TICK } from './config.js';
 import { createInput } from './input.js';
 import { createRenderer } from './render.js';
 import { createAudio } from './audio.js';
@@ -50,7 +50,9 @@ if (shotName) {
     const aimWorldX = world.camera.x + (input.mouseX - w / 2);
     const aimWorldY = world.camera.y + (input.mouseY - h / 2);
     const aim = Math.atan2(aimWorldY - world.player.y, aimWorldX - world.player.x);
-    const ePressed = input.wasPressed('KeyE'); // read once: E is enter + interact + garage
+    // Read E once: it is enter + interact + garage, and a second read
+    // would see nothing (one-shot presses are consumed on read).
+    const ePressed = input.wasPressed('KeyE');
     return {
       move: axis,
       aim,
@@ -124,15 +126,15 @@ if (shotName) {
     } else if (screen === 'play') {
       if (input.wasPressed('KeyP') || input.wasPressed('Escape')) {
         screen = 'pause';
-      } else if (acc >= STEP) {
+      } else if (acc >= TICK) {
         // Build the controls only when a step will actually run: building
         // them consumes the one-shot keys, and a frame with no step would
         // swallow a tap of E entirely.
         const controls = buildControls();
         let steps = 0;
-        while (acc >= STEP && steps < 5) {
-          const result = stepGame(world, controls, STEP, audio);
-          acc -= STEP;
+        while (acc >= TICK && steps < 5) {
+          const result = stepGame(world, controls, TICK, audio);
+          acc -= TICK;
           steps += 1;
           // One-shot keys are consumed by the first step of the frame, so a
           // slow frame running two steps never enters AND exits a car.

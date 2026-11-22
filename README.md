@@ -27,10 +27,11 @@ http://localhost:8080/game/).
 | Mouse + click | Aim / shoot |
 | Space | Handbrake (in car) / punch (on foot) |
 | Shift | Sprint |
-| 1 / 2 | Fists / pistol |
+| 1 / 2 / 3 | Fists / pistol / SMG |
 | R | Reload |
+| C | Change radio station |
+| M | Mute |
 | P / Esc | Pause |
-| M | Mute radio & sound |
 | F5 | Quick save (at the safehouse) |
 
 ## Systems
@@ -38,46 +39,50 @@ http://localhost:8080/game/).
 - **On foot and by car** — distinct handling, car damage, smoke and fire
 - **Traffic and pedestrians** — cars follow the roads, pedestrians stroll the
   sidewalks and flee from gunfire
-- **Wanted level 1–5** — police cars chase, roadblocks at 3+, a police
-  helicopter at 4+, wanted decays when you lay low
-- **6 story missions** with dialogue, objectives, markers and a minimap blip
-- **Combat** — fists and pistol, ammo, health pickups, enemy guards
-- **Money & respect** — mission payouts, cash pickups, respect ranks from
-  Wheelman to Bay Legend
-- **Garage & safehouse** — store cars, repair and respray, save your game
-- **HUD & live minimap** — health, money, wanted stars, ammo, speed, mission
-  objective, radio station
-- **Procedural sound** — WebAudio sound effects and three radio stations
-  (synthwave, latin groove, talk radio) generated live, no audio files
-- **Save / load** — progress saved to localStorage at the safehouse
+- **Stealing cars** — take any parked or driven car; the owner calls it in
+- **Wanted system** — 1–5 stars, police pursuit, roadblocks at 3+, a
+  helicopter at 4+, and getting busted
+- **Six story missions** — dialogue, a bank getaway, a street race, a rescue
+  and a museum diamond heist
+- **Combat** — fists, pistol and SMG, plus armed guards who shoot back
+- **HUD + live minimap** — wanted stars, health, money, objectives, speed
+- **Garage and safehouse** — store and repair cars, save and continue
+- **Sound and music** — WebAudio effects and three procedural radio stations
+- **Golden hour to dusk** — the light shifts as the in-game clock runs
 
 ## Layout
 
 ```
-main.ts            entry program: copies game/ + screenshots/ to /output,
-                   writes dossier.json with vendor/makefun-game.ts
-serve.ts           tiny static server for local testing
 game/
-  index.html       page shell, canvas + HUD overlay
+  index.html        entry point
   src/
-    config.js      tuning constants and palettes
-    random.js      seeded RNG
-    audio.js       WebAudio SFX + procedural radio
-    input.js       keyboard + mouse
-    city.js        city generation: roads, blocks, districts, props
-    world.js       game state: player, cars, peds, police, wanted
-    traffic.js     traffic + pedestrian AI
-    police.js      police chase, roadblocks, helicopter
-    missions.js    six story missions, dialogue, objectives
-    combat.js      shooting, melee, pickups
-    render.js      canvas rendering, HUD, minimap, menus
-    save.js        localStorage save / load
-    shots.js       deterministic screenshot scenes (?shot=cover|chase|mission|menu)
-    main.js        game loop + state machine
-vendor/
-  makefun-game.ts  make.fun dossier library (kit copy, unchanged)
-screenshots/      four real renders of the game's own code
+    config.js       tuning, palettes, districts
+    random.js       seeded RNG + math helpers
+    input.js        keyboard + mouse, one-shot presses
+    city.js         the seeded city: blocks, landmarks, collision
+    world.js        live state: player, cars, wanted, pickups
+    traffic.js      traffic cars + pedestrians
+    police.js       pursuit, roadblocks, helicopter, busted
+    combat.js       weapons, enemies, bullets
+    missions.js     the six story missions
+    simulate.js     one frame: every system in order
+    audio.js        WebAudio effects + procedural radio
+    render.js       canvas world, HUD, minimap, menus
+    shots.js        the four staged screenshot scenes
+    save.js         localStorage save / load
+    main.js         screens, game loop, controls
+main.ts             the program that hands the entry in (dossier.json)
+serve.ts            tiny static server for local play-testing
+shots.json          the four screenshots and their scene queries
 ```
+
+## Screenshots
+
+The four dossier screenshots are staged by `shots.js` — each one plays the
+real game forward for a few seconds with an autopilot, so every frame is a
+genuine render of the game: `1-cover.jpg` (getaway through downtown),
+`2-chase.jpg` (five-star chase), `3-mission.jpg` (the warehouse shootout),
+`4-menu.jpg` (the title screen).
 
 ## License
 

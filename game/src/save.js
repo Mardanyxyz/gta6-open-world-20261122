@@ -1,5 +1,6 @@
-// Save / load: one localStorage slot, written at the safehouse and after
-// every completed mission. Nothing leaves the browser.
+// Save / load: a single localStorage slot, written after every completed
+// mission and whenever the player saves at the safehouse (F5 or the pause
+// menu). Nothing leaves the browser.
 
 const KEY = 'solara-bay-save-v1';
 
@@ -43,7 +44,7 @@ export function loadSave() {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    if (data.version !== 1) return null;
+    if (!data || data.version !== 1) return null;
     return data;
   } catch {
     return null;
@@ -74,6 +75,6 @@ export function clearSave() {
   try {
     localStorage.removeItem(KEY);
   } catch {
-    // ignore
+    // Storage may be unavailable (private mode); saves are best-effort.
   }
 }

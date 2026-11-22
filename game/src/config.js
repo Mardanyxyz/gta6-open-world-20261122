@@ -1,28 +1,30 @@
-// Solara Bay — tuning constants, world layout and palettes.
-// Everything in one place so the rest of the game reads like a spec sheet.
+// Solara Bay — every tuning number, palette and layout constant in one
+// place, so the rest of the game reads like a spec sheet.
+
+export const TICK = 1 / 60;
 
 export const WORLD = {
   width: 5800,
   height: 3720,
-  // City grid: roads are ROAD wide, blocks are BLOCK wide, pitch is the sum.
+  // Roads sit on a regular grid: a road of ROAD width, then a BLOCK-wide
+  // block, repeating every PITCH. There are COLS+1 vertical roads (0..9)
+  // and ROWS+1 horizontal roads (0..6).
   pitch: 560,
   road: 96,
   block: 464,
-  cols: 9, // vertical roads: 0..9
-  rows: 6, // horizontal roads: 0..6
-  // The bay: water starts here, sand before it.
+  cols: 9,
+  rows: 6,
+  // East edge: sand, then the bay itself.
   sandX: 5136,
   waterX: 5310,
 };
 
-export const STEP = 1 / 60;
-
 export const PLAYER = {
   radius: 13,
-  walkSpeed: 235,
-  sprintSpeed: 345,
+  walk: 235,
+  sprint: 345,
   accel: 2400,
-  friction: 0.86,
+  drag: 0.86,
   health: 100,
 };
 
@@ -34,7 +36,7 @@ export const CAR = {
   reverseAccel: 300,
   maxSpeed: 560,
   maxReverse: 190,
-  turnRate: 2.6,
+  turn: 2.6,
   grip: 0.94,
   health: 100,
 };
@@ -45,7 +47,7 @@ export const MAX_COPS = 8;
 
 export const WANTED = {
   decaySeconds: 26,
-  copCarsPerStar: 2,
+  copsPerStar: 2,
   roadblockAt: 3,
   heliAt: 4,
 };
@@ -57,14 +59,14 @@ export const WEAPONS = {
 };
 
 export const CAR_TYPES = {
-  sedan: { length: 64, width: 32, accel: 430, maxSpeed: 520, color: '#c94f43' },
-  coupe: { length: 60, width: 30, accel: 480, maxSpeed: 560, color: '#e8b23a' },
-  sports: { length: 62, width: 30, accel: 560, maxSpeed: 660, color: '#3a7bd5' },
-  taxi: { length: 64, width: 32, accel: 430, maxSpeed: 520, color: '#f2c200' },
-  van: { length: 78, width: 34, accel: 340, maxSpeed: 430, color: '#8a8f98' },
-  truck: { length: 92, width: 36, accel: 300, maxSpeed: 400, color: '#5d7a52' },
-  police: { length: 66, width: 32, accel: 520, maxSpeed: 620, color: '#1c2733' },
-  muscle: { length: 68, width: 34, accel: 500, maxSpeed: 590, color: '#7a2e8f' },
+  sedan: { length: 64, width: 32, accel: 430, maxSpeed: 520 },
+  coupe: { length: 60, width: 30, accel: 480, maxSpeed: 560 },
+  sports: { length: 62, width: 30, accel: 560, maxSpeed: 660 },
+  taxi: { length: 64, width: 32, accel: 430, maxSpeed: 520 },
+  van: { length: 78, width: 34, accel: 340, maxSpeed: 430 },
+  truck: { length: 92, width: 36, accel: 300, maxSpeed: 400 },
+  police: { length: 66, width: 32, accel: 520, maxSpeed: 620 },
+  muscle: { length: 68, width: 34, accel: 500, maxSpeed: 590 },
 };
 
 export const CAR_COLORS = [
@@ -81,7 +83,7 @@ export const DISTRICTS = {
   beachfront: { name: 'Beachfront', ground: '#8a7f68', building: ['#e8dcc8', '#d8c8a8', '#c8b898', '#efe8d8'], roof: '#7a6a52', tall: true },
 };
 
-/** Which district a block (col,row) belongs to. */
+/** Which district owns block (col, row). */
 export function districtOf(col, row) {
   if (col >= 6 && row >= 2) return 'beachfront';
   if (col >= 6) return 'marina';
@@ -100,11 +102,13 @@ export const RESPECT_RANKS = [
 
 export function respectName(missionsDone) {
   let name = RESPECT_RANKS[0].name;
-  for (const rank of RESPECT_RANKS) if (missionsDone >= rank.at) name = rank.name;
+  for (const rank of RESPECT_RANKS) {
+    if (missionsDone >= rank.at) name = rank.name;
+  }
   return name;
 }
 
-/** Clock: the game starts in the golden hour and drifts toward dusk. */
+/** The clock: the game opens in the golden hour and slides toward dusk. */
 export const DAY = {
   startHour: 16.2,
   secondsPerHour: 240,

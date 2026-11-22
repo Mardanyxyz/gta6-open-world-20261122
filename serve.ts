@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const port = Number(process.env.PORT ?? 8080);
-const types = {
+
+const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
@@ -31,7 +32,7 @@ const server = createServer(async (req, res) => {
     }
     if (path.endsWith('/')) path = join(path, 'index.html');
     const body = await readFile(path);
-    res.writeHead(200, { 'content-type': types[extname(path)] ?? 'application/octet-stream' });
+    res.writeHead(200, { 'content-type': MIME[extname(path)] ?? 'application/octet-stream' });
     res.end(body);
   } catch {
     res.writeHead(404);

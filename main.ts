@@ -14,12 +14,22 @@ import { buildDossier } from './vendor/makefun-game.ts';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
-function countEntries(dir, depth = 0) {
+function countEntries(dir) {
   let total = 0;
   for (const name of readdirSync(dir)) {
     total += 1;
     const full = join(dir, name);
-    if (statSync(full).isDirectory()) total += countEntries(full, depth + 1);
+    if (statSync(full).isDirectory()) total += countEntries(full);
+  }
+  return total;
+}
+
+function dirSize(dir) {
+  let total = 0;
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    const st = statSync(full);
+    total += st.isDirectory() ? dirSize(full) : st.size;
   }
   return total;
 }
@@ -42,6 +52,8 @@ for (const name of shots) {
 }
 const gameEntries = countEntries(join(here, 'game'));
 if (gameEntries > 993) throw new Error(`game/ has ${gameEntries} entries (max 993)`);
+const gameBytes = dirSize(join(here, 'game'));
+if (gameBytes > 50331648) throw new Error(`game/ is ${gameBytes} bytes (max 50331648)`);
 
 writeFileSync(
   join(out, 'dossier.json'),

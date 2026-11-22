@@ -26,9 +26,9 @@ export function createAudio() {
     engineGain: null,
     sirenOsc: null,
     sirenGain: null,
-    radioTimer: null,
     nextNoteTime: 0,
     step: 0,
+
     ensure() {
       if (this.ctx) {
         if (this.ctx.state === 'suspended') this.ctx.resume();
@@ -65,18 +65,22 @@ export function createAudio() {
       this.nextNoteTime = this.ctx.currentTime + 0.1;
       this.step = 0;
     },
+
     setMuted(m) {
       this.muted = m;
       if (this.master) this.master.gain.value = m ? 0 : 0.5;
     },
+
     setStation(i) {
       this.station = ((i % STATIONS.length) + STATIONS.length) % STATIONS.length;
       this.step = 0;
       return STATIONS[this.station].name;
     },
+
     stationName() {
       return STATIONS[this.station].name;
     },
+
     blip(freq, dur, type, vol) {
       if (!this.ctx || this.muted) return;
       const t = this.ctx.currentTime;
@@ -91,6 +95,7 @@ export function createAudio() {
       osc.start(t);
       osc.stop(t + dur + 0.02);
     },
+
     noise(dur, vol, filterFreq) {
       if (!this.ctx || this.muted) return;
       const t = this.ctx.currentTime;
@@ -110,26 +115,38 @@ export function createAudio() {
       g.connect(this.master);
       src.start(t);
     },
-    gunshot() { this.noise(0.12, 0.3, 2600); this.blip(160, 0.08, 'square', 0.1); },
+
+    gunshot() {
+      this.noise(0.12, 0.3, 2600);
+      this.blip(160, 0.08, 'square', 0.1);
+    },
+
     crash() { this.noise(0.3, 0.35, 500); },
-    pickup() { this.blip(660, 0.09, 'sine', 0.16); this.blip(990, 0.12, 'sine', 0.14); },
+
+    pickup() {
+      this.blip(660, 0.09, 'sine', 0.16);
+      this.blip(990, 0.12, 'sine', 0.14);
+    },
+
     click() { this.blip(520, 0.05, 'square', 0.08); },
+
     mission() {
       this.blip(523, 0.12, 'sine', 0.16);
       setTimeout(() => this.blip(659, 0.12, 'sine', 0.16), 120);
       setTimeout(() => this.blip(784, 0.2, 'sine', 0.18), 240);
     },
+
     siren(on) {
       if (!this.ctx) return;
       const t = this.ctx.currentTime;
       if (on) {
         this.sirenGain.gain.setTargetAtTime(0.035, t, 0.2);
-        const f = 650 + Math.sin(t * 3.2) * 220;
-        this.sirenOsc.frequency.setTargetAtTime(f, t, 0.05);
+        this.sirenOsc.frequency.setTargetAtTime(650 + Math.sin(t * 3.2) * 220, t, 0.05);
       } else {
         this.sirenGain.gain.setTargetAtTime(0, t, 0.2);
       }
     },
+
     engine(speed, driving) {
       if (!this.ctx) return;
       const t = this.ctx.currentTime;
@@ -137,6 +154,7 @@ export function createAudio() {
       this.engineGain.gain.setTargetAtTime(target, t, 0.08);
       this.engineOsc.frequency.setTargetAtTime(46 + Math.abs(speed) * 0.22, t, 0.08);
     },
+
     /** Schedule the radio's next notes; call every frame. */
     radioTick() {
       if (!this.ctx || this.muted) return;
@@ -163,6 +181,7 @@ export function createAudio() {
         this.step += 1;
       }
     },
+
     noteAt(freq, t, dur, type, vol) {
       const osc = this.ctx.createOscillator();
       const g = this.ctx.createGain();
@@ -175,6 +194,7 @@ export function createAudio() {
       osc.start(t);
       osc.stop(t + dur + 0.02);
     },
+
     hatAt(t) {
       const len = Math.floor(this.ctx.sampleRate * 0.03);
       const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);

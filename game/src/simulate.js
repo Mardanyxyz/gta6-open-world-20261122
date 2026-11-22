@@ -3,12 +3,11 @@
 // keyboard and mouse; the screenshot scenes build them from an autopilot.
 // Keeping this separate from main.js means a shot is a real game, simulated.
 
-import { STEP, DAY } from './config.js';
+import { TICK, DAY } from './config.js';
 import { clamp, dist, angleTo } from './random.js';
 import {
   createWorld, stepPlayerOnFoot, stepCar, stepWanted, stepPickups, stepFx,
-  stepCamera, nearestCar, enterCar, exitCar, addMessage, addWanted,
-  playerDist, playerPos,
+  stepCamera, nearestCar, enterCar, exitCar, addMessage, playerDist, playerPos,
 } from './world.js';
 import { initTraffic, stepTraffic, stepPeds } from './traffic.js';
 import { stepPolice, clearHeat } from './police.js';
@@ -179,7 +178,6 @@ export function stepGame(world, controls, dt, audio) {
 }
 
 function spawnGarageCar(world, spec) {
-  // Imported lazily to avoid a cycle: world.js already exports makeCar.
   const garage = world.city.specials.garage;
   const car = {
     id: Math.floor(world.rng() * 1e9),

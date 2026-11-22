@@ -4,13 +4,13 @@
 // gives the same frame. The cover shows the city, a car, the police, the HUD
 // and the minimap at once.
 
-import { STEP } from './config.js';
+import { TICK } from './config.js';
 import { clamp, dist, angleTo, angleDiff } from './random.js';
 import { stepGame } from './simulate.js';
 import { startMission } from './missions.js';
 import { makeCar, addWanted, playerPos } from './world.js';
 
-const SAMPLE = STEP;
+const SAMPLE = TICK;
 
 /** Drive a loop of road intersections: steer at the next corner, slow to turn. */
 function makeDriver(waypoints) {
@@ -65,17 +65,18 @@ function addCopBehind(world, x, y, angle) {
   return car;
 }
 
+const EMPTY_CONTROLS = {
+  move: { x: 0, y: 0 }, aim: 0,
+  fire: false, fireHeld: false, handbrake: false, sprint: false,
+  enter: false, interact: false, garage: false,
+  weapon: null, reload: false, radio: false, mute: false, save: false,
+};
+
 function stepN(world, controlsFn, seconds) {
   const steps = Math.floor(seconds / SAMPLE);
   for (let i = 0; i < steps; i += 1) {
     const controls = controlsFn(world, i);
-    stepGame(world, {
-      move: { x: 0, y: 0 }, aim: 0,
-      fire: false, fireHeld: false, handbrake: false, sprint: false,
-      enter: false, interact: false, garage: false,
-      weapon: null, reload: false, radio: false, mute: false, save: false,
-      ...controls,
-    }, SAMPLE, null);
+    stepGame(world, { ...EMPTY_CONTROLS, ...controls }, SAMPLE, null);
     if (world.over && world.overKind !== 'won') {
       // A staged scene never ends on camera: revive and keep rolling.
       world.player.dead = false;

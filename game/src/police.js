@@ -1,16 +1,16 @@
 // The Solara Bay Police Department: wanted response, pursuits, roadblocks,
 // the helicopter, and getting busted.
 // Wanted 1–2: patrol cars chase and ram. Wanted 3: roadblocks ahead of you.
-// Wanted 4–5: a helicopter circles overhead with a spotlight and takes shots.
-// Get caught on foot at low speed, or with a wrecked car, and it is over.
+// Wanted 4–5: a helicopter circles overhead with a spotlight and takes
+// shots. Get caught on foot at low speed, or with a wrecked car, and it is
+// over.
 
-import { WORLD, WANTED, CAR_TYPES } from './config.js';
-import { range, int, pick, chance, clamp, dist, angleDiff, angleTo } from './random.js';
-import { makeCar, spawnParticles, addWanted, addMessage, playerPos } from './world.js';
-import { vRoadX, hRoadY } from './city.js';
+import { WORLD, WANTED } from './config.js';
+import { range, chance, clamp, dist, angleDiff, angleTo } from './random.js';
+import { makeCar, spawnParticles, addMessage, playerPos } from './world.js';
 
 export function wantedCopCount(wanted) {
-  return Math.min(WANTED.MAX_COPS ?? 8, wanted * WANTED.copCarsPerStar);
+  return Math.min(WANTED.MAX_COPS ?? 8, wanted * WANTED.copsPerStar);
 }
 
 export function stepPolice(world, dt) {
@@ -19,22 +19,24 @@ export function stepPolice(world, dt) {
   const wanted = world.wanted;
 
   // Spawn / despawn pursuit cars to match the wanted level.
-  const want = wanted === 0 ? 0 : Math.min(8, wanted * WANTED.copCarsPerStar);
+  const want = wanted === 0 ? 0 : wantedCopCount(wanted);
   const cap = world.copCap ?? want;
   const target = Math.min(want, cap);
   const alive = world.cops.filter((c) => !c.dead);
   if (alive.length < target) {
     const car = makeCar('police', 0, 0, 0, '#1c2733', 'police', rng);
     // Drop in a few blocks away, on a road, heading toward the player.
-    const p = world.city.randomRoadPoint(rng);
+    let x = 0;
+    let y = 0;
     let tries = 0;
-    let x = p.x;
-    let y = p.y;
-    while (dist(x, y, pp.x, pp.y) < 900 && tries < 12) {
-      const q = world.city.randomRoadPoint(rng);
-      x = q.x; y = q.y; tries += 1;
-    }
-    car.x = x; car.y = y;
+    do {
+      const p = world.city.randomRoadPoint(rng);
+      x = p.x;
+      y = p.y;
+      tries += 1;
+    } while (dist(x, y, pp.x, pp.y) < 900 && tries < 12);
+    car.x = x;
+    car.y = y;
     car.angle = angleTo(x, y, pp.x, pp.y);
     car.speed = 200;
     world.cars.push(car);
@@ -42,12 +44,11 @@ export function stepPolice(world, dt) {
   }
   if (wanted === 0) {
     for (const cop of world.cops) {
-      if (!cop.dead) {
-        // Give up and pull over: a parked cop car, never a traffic car
-        // (traffic cars need a route, which a pursuit car never had).
-        cop.driver = 'parked';
-        cop.speed = 0;
-      }
+      if (cop.dead) continue;
+      // Give up and pull over as a parked car — never as a traffic car,
+      // because a pursuit car has no route and traffic cars need one.
+      cop.driver = 'parked';
+      cop.speed = 0;
     }
     world.cops = [];
     // Do not litter the city with parked cruisers.
@@ -69,23 +70,23 @@ export function stepPolice(world, dt) {
     const slot = (ci / Math.max(1, world.cops.length)) * Math.PI * 2 + world.time * 0.25;
     const tx = pp.x + Math.cos(slot) * 74;
     const ty = pp.y + Math.sin(slot) * 74;
-    const target = angleTo(cop.x, cop.y, tx, ty);
+    const targetAngle = angleTo(cop.x, cop.y, tx, ty);
     const d = dist(cop.x, cop.y, pp.x, pp.y);
-    const diff = angleDiff(cop.angle, target);
+    const diff = angleDiff(cop.angle, targetAngle);
     const steer = clamp(diff * 2.2, -1, 1);
     let throttle = 1;
     if (d < 90) throttle = 0.25;
     // Ram the player's car; on foot, slow down to make the bust.
-    const playerSpeed = world.player.inCar ? Math.abs(world.player.inCar.speed) : 0;
     if (!world.player.inCar && d < 120) throttle = 0.3;
-    cop.speed += (throttle > 0 ? cop.accel : 0) * dt * throttle;
+    cop.speed += cop.accel * dt * throttle;
     cop.speed -= cop.speed * 0.3 * dt;
     cop.speed = clamp(cop.speed, -100, cop.maxSpeed);
     cop.angle += steer * 2.4 * clamp(Math.abs(cop.speed) / 260, 0, 1) * dt * (cop.speed >= 0 ? 1 : -1);
     const nx = cop.x + Math.cos(cop.angle) * cop.speed * dt;
     const ny = cop.y + Math.sin(cop.angle) * cop.speed * dt;
     if (!world.city.hitsBuilding(nx, ny, 26)) {
-      cop.x = nx; cop.y = ny;
+      cop.x = nx;
+      cop.y = ny;
     } else {
       cop.speed *= -0.2;
       cop.angle += 0.6;
@@ -132,7 +133,11 @@ export function stepPolice(world, dt) {
       const by = pp.y + Math.sin(heading) * 620;
       const block = [];
       for (let i = -1; i <= 1; i += 1) {
-        const car = makeCar('police', bx - Math.sin(heading) * i * 46, by + Math.cos(heading) * i * 46, heading + Math.PI / 2, '#1c2733', 'roadblock', rng);
+        const car = makeCar(
+          'police',
+          bx - Math.sin(heading) * i * 46, by + Math.cos(heading) * i * 46,
+          heading + Math.PI / 2, '#1c2733', 'roadblock', rng,
+        );
         car.speed = 0;
         world.cars.push(car);
         block.push(car);
@@ -169,10 +174,7 @@ export function stepPolice(world, dt) {
       // Inaccurate fire: a burst near the player.
       for (let i = 0; i < 3; i += 1) {
         const a = h.angle + range(rng, -0.25, 0.25);
-        world.bullets.push({
-          x: h.x, y: h.y, angle: a, speed: 900,
-          life: 1.1, from: 'heli', damage: 8,
-        });
+        world.bullets.push({ x: h.x, y: h.y, angle: a, speed: 900, life: 1.1, from: 'heli', damage: 8 });
       }
       spawnParticles(world, h.x, h.y, 4, '#ffd76a', 120, 0.3, 3);
     }
@@ -210,9 +212,11 @@ export function stepPolice(world, dt) {
 export function clearHeat(world) {
   world.wanted = 0;
   world.wantedTimer = 0;
-  for (const cop of world.cops) cop.driver = 'traffic';
+  for (const cop of world.cops) cop.driver = 'parked';
   world.cops = [];
-  for (const rb of world.roadblocks) for (const car of rb.cars) car.dead = true;
+  for (const rb of world.roadblocks) {
+    for (const car of rb.cars) car.dead = true;
+  }
   world.roadblocks = [];
   world.heli = null;
 }

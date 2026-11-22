@@ -32,17 +32,18 @@ export function fireWeapon(world) {
   const angle = p.angle + range(world.rng, -spread, spread);
   const mx = p.x + Math.cos(p.angle) * 20;
   const my = p.y + Math.sin(p.angle) * 20;
+
   if (p.weapon === 'fists') {
     // A short swing: anything in front and close takes the hit.
     for (const e of world.enemies) {
       if (e.dead) continue;
-      if (dist(p.x, p.y, e.x, e.y) < spec.range + 14 && Math.abs(angleDiff(p.angle, angleTo(p.x, p.y, e.x, e.y))) < 0.9) {
-        damageEnemy(world, e, spec.damage);
-      }
+      const facing = Math.abs(angleDiff(p.angle, angleTo(p.x, p.y, e.x, e.y))) < 0.9;
+      if (facing && dist(p.x, p.y, e.x, e.y) < spec.range + 14) damageEnemy(world, e, spec.damage);
     }
     for (const ped of world.peds) {
       if (ped.dead) continue;
-      if (dist(p.x, p.y, ped.x, ped.y) < spec.range && Math.abs(angleDiff(p.angle, angleTo(p.x, p.y, ped.x, ped.y))) < 0.9) {
+      const facing = Math.abs(angleDiff(p.angle, angleTo(p.x, p.y, ped.x, ped.y))) < 0.9;
+      if (facing && dist(p.x, p.y, ped.x, ped.y) < spec.range) {
         ped.dead = true;
         world.stats.kills += 1;
         addWanted(world, 1, 'assault');
@@ -51,7 +52,11 @@ export function fireWeapon(world) {
     spawnParticles(world, mx, my, 3, '#ffffff', 60, 0.15, 2);
     return true;
   }
-  world.bullets.push({ x: mx, y: my, angle, speed: 1050, life: spec.range / 1050 + 0.05, from: 'player', damage: spec.damage });
+
+  world.bullets.push({
+    x: mx, y: my, angle, speed: 1050,
+    life: spec.range / 1050 + 0.05, from: 'player', damage: spec.damage,
+  });
   spawnParticles(world, mx, my, 4, '#ffd76a', 140, 0.18, 3);
   // Gunfire in public draws the law.
   addWanted(world, 1, 'shots fired');
@@ -84,7 +89,7 @@ export function damageEnemy(world, enemy, dmg) {
   }
 }
 
-export function damagePlayer(world, dmg, fromX, fromY) {
+export function damagePlayer(world, dmg) {
   const p = world.player;
   if (p.dead || world.over) return;
   p.health -= dmg;
@@ -163,6 +168,7 @@ export function stepCombat(world, dt) {
     }
     if (hit) world.bullets.splice(i, 1);
   }
+
   // Heli / enemy bullets vs the player.
   for (let i = world.bullets.length - 1; i >= 0; i -= 1) {
     const b = world.bullets[i];
@@ -171,11 +177,8 @@ export function stepCombat(world, dt) {
     const py = p.inCar ? p.inCar.y : p.y;
     const r = p.inCar ? 28 : 14;
     if (dist(b.x, b.y, px, py) < r) {
-      if (p.inCar) {
-        p.inCar.health -= b.damage;
-      } else {
-        damagePlayer(world, b.damage, b.x, b.y);
-      }
+      if (p.inCar) p.inCar.health -= b.damage;
+      else damagePlayer(world, b.damage);
       world.bullets.splice(i, 1);
     }
   }
