@@ -76,6 +76,10 @@ shots.json          the four screenshots and their scene queries
 
 The four dossier screenshots are staged by `shots.js` — each one plays the real game forward for a few seconds with an autopilot, so every frame is a genuine render of the game: `1-cover.jpg` (bank getaway through downtown, 3 stars), `2-chase.jpg` (five-star chase at dusk on Beachfront), `3-mission.jpg` (the warehouse shootout), `4-menu.jpg` (the title screen).
 
+## Development notes
+
+Solara Bay was built from scratch for this bounty: the city is generated from a seed, so every block, road and landmark is reproducible, and every system — driving, the wanted levels, traffic, the radio — was written by hand with no libraries and no copied assets. The aim was a game that feels like a living city in a single browser tab: traffic keeps moving whether you watch it or not, the police escalate the more heat you draw, and the day visibly ages from golden hour into dusk while you play.
+
 ## License
 
 MIT — see `LICENSE`.
