@@ -1,115 +1,79 @@
-// Solara Bay — every tuning number, palette and layout constant in one
-// place, so the rest of the game reads like a spec sheet.
-
-export const TICK = 1 / 60;
-
+// Solara Bay tuning: every number that shapes how the city feels lives here.
+// Districts, palettes, car handling, weapons, wanted levels and mission rewards.
 export const WORLD = {
-  width: 5800,
-  height: 3720,
-  // Roads sit on a regular grid: a road of ROAD width, then a BLOCK-wide
-  // block, repeating every PITCH. There are COLS+1 vertical roads (0..9)
-  // and ROWS+1 horizontal roads (0..6).
-  pitch: 560,
-  road: 96,
-  block: 464,
-  cols: 9,
-  rows: 6,
-  // East edge: sand, then the bay itself.
-  sandX: 5136,
-  waterX: 5310,
+  size: 5200, // city is a square, WORLD.size metres a side (1 px = 1 m at zoom 1)
+  roadGap: 340, // distance between road centrelines
+  roadWidth: 64,
+  sidewalk: 14,
+};
+
+export const DISTRICTS = [
+  { name: 'Downtown', x: 1500, y: 1500, w: 1500, h: 1200, tint: '#3d4a6b', style: 'towers' },
+  { name: 'Marina', x: 3000, y: 900, w: 1200, h: 900, tint: '#2e6f8e', style: 'marina' },
+  { name: 'Old Town', x: 900, y: 2700, w: 1300, h: 1200, tint: '#8a6a4a', style: 'old' },
+  { name: 'Industrial', x: 3000, y: 2700, w: 1300, h: 1200, tint: '#5a5f66', style: 'industrial' },
+  { name: 'Beachfront', x: 900, y: 3900, w: 3400, h: 900, tint: '#d9a05b', style: 'beach' },
+  { name: 'The Hills', x: 3900, y: 3900, w: 900, h: 900, tint: '#4a7a4a', style: 'hills' },
+];
+
+export const PALETTE = {
+  grass: '#5d8a4a',
+  grassDry: '#7d9a52',
+  road: '#33363d',
+  roadLine: '#e8d44d',
+  sidewalk: '#8d8d84',
+  buildingRoof: ['#7a5a4a', '#5a6a7a', '#8a7a5a', '#6a5a6a', '#4a6a5a', '#9a8a6a'],
+  water: '#2a6f9e',
+  waterDeep: '#1d4f78',
+  sand: '#e0c184',
+  park: '#4a7a3a',
+  plaza: '#9a9a90',
 };
 
 export const PLAYER = {
+  walkSpeed: 210,
+  sprintSpeed: 330,
   radius: 13,
-  walk: 235,
-  sprint: 345,
-  accel: 2400,
-  drag: 0.86,
-  health: 100,
+  maxHealth: 100,
+  punchDamage: 12,
+  punchRange: 34,
+  punchCooldown: 0.38,
 };
 
-export const CAR = {
-  length: 64,
-  width: 32,
-  accel: 460,
-  brake: 900,
-  reverseAccel: 300,
-  maxSpeed: 560,
-  maxReverse: 190,
-  turn: 2.6,
-  grip: 0.94,
-  health: 100,
-};
-
-export const TRAFFIC_COUNT = 26;
-export const PED_COUNT = 42;
-export const MAX_COPS = 8;
-
-export const WANTED = {
-  decaySeconds: 26,
-  copsPerStar: 2,
-  roadblockAt: 3,
-  heliAt: 4,
+export const CARS = {
+  // name, top speed (m/s), accel, turn rate, colour set, class
+  sedan: { label: 'Vesper Sedan', top: 46, accel: 26, turn: 2.6, colours: ['#c0392b', '#2c3e50', '#7f8c8d', '#16a085'] },
+  coupe: { label: 'Comet Coupe', top: 58, accel: 32, turn: 2.9, colours: ['#e74c3c', '#f1c40f', '#8e44ad', '#111111'] },
+  taxi: { label: 'Bay Taxi', top: 44, accel: 24, turn: 2.6, colours: ['#f1c40f'] },
+  truck: { label: 'Hauler Truck', top: 36, accel: 18, turn: 2.1, colours: ['#7f8c8d', '#95a5a6', '#2c3e50'] },
+  police: { label: 'SBPD Cruiser', top: 56, accel: 34, turn: 3.0, colours: ['#1a1a2e'] },
+  van: { label: 'Courier Van', top: 40, accel: 20, turn: 2.2, colours: ['#ecf0f1', '#3498db'] },
+  sport: { label: 'Falcon GT', top: 66, accel: 38, turn: 3.1, colours: ['#e67e22', '#c0392b', '#2ecc71'] },
+  muscle: { label: 'Bruiser Muscle', top: 52, accel: 30, turn: 2.4, colours: ['#922b21', '#1b4f72', '#7d6608'] },
 };
 
 export const WEAPONS = {
-  fists: { name: 'FISTS', damage: 12, rate: 0.32, range: 42, ammo: Infinity, auto: false },
-  pistol: { name: 'PISTOL', damage: 34, rate: 0.28, range: 420, ammo: 12, reserve: 96, auto: false },
-  smg: { name: 'SMG', damage: 16, rate: 0.09, range: 380, ammo: 30, reserve: 180, auto: true },
+  fists: { name: 'Fists', damage: 12, rate: 0.38, range: 34, auto: false, ammo: Infinity, mag: Infinity },
+  pistol: { name: 'P9 Pistol', damage: 22, rate: 0.24, range: 420, auto: false, ammo: 120, mag: 12, spread: 0.05, speed: 900 },
+  smg: { name: 'VK-9 SMG', damage: 13, rate: 0.085, range: 380, auto: true, ammo: 240, mag: 30, spread: 0.11, speed: 1000 },
+  shotgun: { name: 'Riot Shotgun', damage: 15, rate: 0.85, range: 260, auto: false, ammo: 48, mag: 6, spread: 0.22, speed: 800, pellets: 6 },
 };
 
-export const CAR_TYPES = {
-  sedan: { length: 64, width: 32, accel: 430, maxSpeed: 520 },
-  coupe: { length: 60, width: 30, accel: 480, maxSpeed: 560 },
-  sports: { length: 62, width: 30, accel: 560, maxSpeed: 660 },
-  taxi: { length: 64, width: 32, accel: 430, maxSpeed: 520 },
-  van: { length: 78, width: 34, accel: 340, maxSpeed: 430 },
-  truck: { length: 92, width: 36, accel: 300, maxSpeed: 400 },
-  police: { length: 66, width: 32, accel: 520, maxSpeed: 620 },
-  muscle: { length: 68, width: 34, accel: 500, maxSpeed: 590 },
+export const WANTED = {
+  decay: 0.011, // stars lost per second while unseen
+  bustRadius: 26,
+  levels: [
+    null,
+    { cops: 1, label: 'Petty theft' },
+    { cops: 2, label: 'Grand theft auto' },
+    { cops: 3, label: 'Armed robbery', roadblocks: true },
+    { cops: 4, label: 'Police manhunt', roadblocks: true, heli: true },
+    { cops: 5, label: 'City-wide lockdown', roadblocks: true, heli: true },
+  ],
 };
 
-export const CAR_COLORS = [
-  '#c94f43', '#e8b23a', '#3a7bd5', '#4fae62', '#8a8f98', '#e8e4da',
-  '#7a2e8f', '#2e8f7a', '#d56a3a', '#37415c', '#a33a5c', '#5c7a3a',
-];
-
-export const DISTRICTS = {
-  downtown: { name: 'Downtown', ground: '#6f6a63', building: ['#7d8aa0', '#5d6b84', '#8fa3bd', '#6b7f9e'], roof: '#3d4657', tall: true },
-  oldtown: { name: 'Old Town', ground: '#7a6a58', building: ['#a67c52', '#8f6b48', '#b08a5e', '#96684a'], roof: '#6b4f38', tall: false },
-  marina: { name: 'Marina', ground: '#77808a', building: ['#7fa8b8', '#5f8a9e', '#93b7c4', '#6b94a6'], roof: '#41586a', tall: false },
-  industrial: { name: 'Industrial Quarter', ground: '#6a6a66', building: ['#7a7568', '#6b6a62', '#857c6e', '#5f5b52'], roof: '#46443e', tall: false },
-  hills: { name: 'The Hills', ground: '#5f7a52', building: ['#b08a6e', '#9c7a5e', '#c09a7a', '#8a6f56'], roof: '#5d4a3a', tall: false },
-  beachfront: { name: 'Beachfront', ground: '#8a7f68', building: ['#e8dcc8', '#d8c8a8', '#c8b898', '#efe8d8'], roof: '#7a6a52', tall: true },
-};
-
-/** Which district owns block (col, row). */
-export function districtOf(col, row) {
-  if (col >= 6 && row >= 2) return 'beachfront';
-  if (col >= 6) return 'marina';
-  if (row >= 3 && col <= 2) return 'industrial';
-  if (row >= 3) return 'hills';
-  if (col <= 2) return 'oldtown';
-  return 'downtown';
-}
-
-export const RESPECT_RANKS = [
-  { at: 0, name: 'WHEELMAN' },
-  { at: 2, name: 'HUSTLER' },
-  { at: 4, name: 'SHOT CALLER' },
-  { at: 6, name: 'BAY LEGEND' },
-];
-
-export function respectName(missionsDone) {
-  let name = RESPECT_RANKS[0].name;
-  for (const rank of RESPECT_RANKS) {
-    if (missionsDone >= rank.at) name = rank.name;
-  }
-  return name;
-}
-
-/** The clock: the game opens in the golden hour and slides toward dusk. */
-export const DAY = {
-  startHour: 16.2,
-  secondsPerHour: 240,
-};
+export const STEP = 1 / 60;
+export const SAVE_KEY = 'solara-bay-save-v2';
+export const BEST_KEY = 'solara-bay-best-v2';
+export const DAY_LENGTH = 300; // seconds for a full day cycle
+export const MISSION_REWARDS = [400, 900, 1500, 2200, 3500, 8000];

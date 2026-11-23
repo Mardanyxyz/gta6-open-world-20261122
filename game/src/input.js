@@ -1,92 +1,85 @@
-// Keyboard + mouse state as one plain object the game loop reads.
-// Keys are tracked by `code` (KeyW, ArrowUp, Space, ...). Mouse position is
-// in canvas pixels.
-//
-// One-shot presses are consumed on read (`wasPressed` / `clicked`), and a
-// press nobody reads within 150 ms expires on its own. That pair of rules
-// is what makes a quick tap of E never get dropped between frames and never
-// leak into the next screen — a tap that lands between the frame's read and
-// its cleanup is still there for the next read, and a stale one is gone.
+// Keyboard + mouse input. Keys are held state; presses are one-shot actions
+// consumed by takeActions() so a single tap never fires twice.
+export const ACTION_CONFIRM = 1;
+export const ACTION_PAUSE = 2;
+export const ACTION_ENTER_CAR = 4;
+export const ACTION_RELOAD = 8;
+export const ACTION_RADIO = 16;
+export const ACTION_MUTE = 32;
+export const ACTION_WEAPON_NEXT = 64;
+export const ACTION_SAVE = 128;
 
-const PRESS_TTL_MS = 150;
-const SCROLL_KEYS = ['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'F5'];
+const KEY_ACTIONS = {
+  Space: ACTION_CONFIRM,
+  Enter: ACTION_CONFIRM,
+  KeyP: ACTION_PAUSE,
+  Escape: ACTION_PAUSE,
+  KeyE: ACTION_ENTER_CAR,
+  KeyR: ACTION_RELOAD,
+  KeyC: ACTION_RADIO,
+  KeyM: ACTION_MUTE,
+  KeyQ: ACTION_WEAPON_NEXT,
+  KeyF: ACTION_SAVE,
+};
 
 export function createInput(canvas) {
-  const input = {
-    keys: new Set(),
-    pressed: new Map(), // code -> performance.now() of the keydown
-    mouseX: 0,
-    mouseY: 0,
-    mouseDown: false,
-    mouseClicked: false,
-    mouseClickTime: 0,
-    frame: 0,
-  };
+  const held = new Set();
+  const pressed = new Set();
+  let mouseX = 0, mouseY = 0, mouseDown = false, mousePressed = false;
+  let lastKey = '';
 
   function onKeyDown(e) {
-    if (SCROLL_KEYS.includes(e.code)) e.preventDefault();
-    if (!e.repeat) input.pressed.set(e.code, performance.now());
-    input.keys.add(e.code);
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+    if (!e.repeat) pressed.add(e.code);
+    held.add(e.code);
+    lastKey = e.code;
   }
-  function onKeyUp(e) {
-    input.keys.delete(e.code);
-  }
+  function onKeyUp(e) { held.delete(e.code); }
   function onMouseMove(e) {
-    const rect = canvas.getBoundingClientRect();
-    input.mouseX = e.clientX - rect.left;
-    input.mouseY = e.clientY - rect.top;
+    const r = canvas.getBoundingClientRect();
+    mouseX = e.clientX - r.left;
+    mouseY = e.clientY - r.top;
   }
   function onMouseDown(e) {
     onMouseMove(e);
-    input.mouseDown = true;
-    input.mouseClicked = true;
-    input.mouseClickTime = performance.now();
+    if (!mouseDown) mousePressed = true;
+    mouseDown = true;
   }
+  function onMouseUp() { mouseDown = false; }
+  function onBlur() { held.clear(); mouseDown = false; }
 
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
-  window.addEventListener('blur', () => input.keys.clear());
+  window.addEventListener('blur', onBlur);
   canvas.addEventListener('mousemove', onMouseMove);
   canvas.addEventListener('mousedown', onMouseDown);
-  window.addEventListener('mouseup', () => { input.mouseDown = false; });
-  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  window.addEventListener('mouseup', onMouseUp);
 
-  input.isDown = (code) => input.keys.has(code);
-
-  /** True exactly once per key press; consumes it. */
-  input.wasPressed = (code) => {
-    if (!input.pressed.has(code)) return false;
-    input.pressed.delete(code);
-    return true;
+  return {
+    // Normalised WASD / arrow movement vector.
+    move() {
+      let x = 0, y = 0;
+      if (held.has('KeyA') || held.has('ArrowLeft')) x -= 1;
+      if (held.has('KeyD') || held.has('ArrowRight')) x += 1;
+      if (held.has('KeyW') || held.has('ArrowUp')) y -= 1;
+      if (held.has('KeyS') || held.has('ArrowDown')) y += 1;
+      if (x && y) { x *= Math.SQRT1_2; y *= Math.SQRT1_2; }
+      return { x, y };
+    },
+    sprint() { return held.has('ShiftLeft') || held.has('ShiftRight'); },
+    handbrake() { return held.has('Space'); },
+    mouse() { return { x: mouseX, y: mouseY, down: mouseDown, pressed: mousePressed }; },
+    consumeMousePress() { mousePressed = false; },
+    lastKey() { return lastKey; },
+    takeActions() {
+      let out = 0;
+      for (const code of pressed) {
+        const a = KEY_ACTIONS[code];
+        if (a) out |= a;
+      }
+      pressed.clear();
+      return out;
+    },
+    anyKey() { const k = pressed.size > 0 || mousePressed; pressed.clear(); return k; },
   };
-
-  /** True exactly once per click; consumes it. */
-  input.clicked = () => {
-    if (!input.mouseClicked) return false;
-    input.mouseClicked = false;
-    return true;
-  };
-
-  /** WASD / arrows as a -1..1 movement vector. */
-  input.axis = () => {
-    const k = input.keys;
-    return {
-      x: (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0),
-      y: (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0) - (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0),
-    };
-  };
-
-  /** End of frame: drop presses and clicks nobody consumed in time. */
-  input.endStep = () => {
-    input.frame += 1;
-    const now = performance.now();
-    for (const [code, t] of input.pressed) {
-      if (now - t > PRESS_TTL_MS) input.pressed.delete(code);
-    }
-    if (input.mouseClicked && now - input.mouseClickTime > PRESS_TTL_MS) {
-      input.mouseClicked = false;
-    }
-  };
-
-  return input;
 }

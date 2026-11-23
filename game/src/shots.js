@@ -1,178 +1,146 @@
-// The four screenshot scenes. Each one plays the real rules forward from a
-// fresh world for a fixed number of steps, steered by a simple autopilot, so
-// the frame is what a short game really looks like and the same seed always
-// gives the same frame. The cover shows the city, a car, the police, the HUD
-// and the minimap at once.
-
-import { TICK } from './config.js';
-import { clamp, dist, angleTo, angleDiff } from './random.js';
-import { stepGame } from './simulate.js';
+// Staged screenshot scenes. Each one sets up a real game state, plays it
+// forward with a simple autopilot for a few seconds, then paints it twice and
+// sets window.__shotReady so the screenshot tool can capture the frame.
+// Every frame is a genuine render of the game — nothing is composited.
+import { createWorld, setWanted, showBanner, showMessage } from './world.js';
+import { createRandom, dist } from './random.js';
 import { startMission } from './missions.js';
-import { makeCar, addWanted, playerPos } from './world.js';
+import { spawnEnemy, fireWeapon } from './combat.js';
+import { makeCar } from './world.js';
+import { STEP } from './config.js';
+import { stepGame } from './simulate.js';
 
-const SAMPLE = TICK;
-
-/** Drive a loop of road intersections: steer at the next corner, slow to turn. */
-function makeDriver(waypoints) {
-  let wp = 0;
-  let stuckTimer = 0;
-  let reversing = 0;
-  return function drive(world) {
-    const car = world.player.inCar;
-    if (!car) return { move: { x: 0, y: 0 }, aim: 0 };
-    const target = waypoints[wp];
-    if (dist(car.x, car.y, target.x, target.y) < 130) wp = (wp + 1) % waypoints.length;
-    const want = angleTo(car.x, car.y, waypoints[wp].x, waypoints[wp].y);
-    const diff = angleDiff(car.angle, want);
-    const speed = Math.abs(car.speed);
-    if (speed < 25) stuckTimer += SAMPLE;
-    else stuckTimer = 0;
-    if (stuckTimer > 1.6) {
-      reversing = 1.0;
-      stuckTimer = 0;
-    }
-    if (reversing > 0) {
-      reversing -= SAMPLE;
-      return { move: { x: -clamp(diff * 2, -1, 1), y: 1 }, aim: car.angle, handbrake: false };
-    }
-    const steer = clamp(diff * 2.4, -1, 1);
-    const throttle = Math.abs(diff) > 1.1 ? 0.35 : 1;
-    return { move: { x: steer, y: -throttle }, aim: car.angle, handbrake: false };
+// A fake input that drives like a player: holds W, steers toward a target.
+function autopilotInput(target) {
+  const keys = new Set(['KeyW']);
+  return {
+    takeActions() { return 0; },
+    move() { return { x: 0, y: -1 }; },
+    sprint() { return false; },
+    handbrake() { return false; },
+    mouse() { return { x: 640, y: 300, down: false, pressed: false }; },
+    consumeMousePress() {},
+    lastKey() { return 'KeyW'; },
+    anyKey() { return false; },
+    target,
   };
 }
 
-function putPlayerInCar(world, type, x, y, angle, color) {
-  const car = makeCar(type, x, y, angle, color, 'player', world.rng);
-  // Staged scenes run a long sim under police fire: the hero car is
-  // effectively invulnerable so the frame still shows a chase, not a wreck.
-  car.health = 10000;
-  world.cars.push(car);
-  world.player.inCar = car;
-  world.player.x = x;
-  world.player.y = y;
-  world.player.angle = angle;
-  world.camera.x = x;
-  world.camera.y = y;
-  return car;
+function steerToward(state, target, input) {
+  // Override the autopilot steering by nudging the car angle directly.
+  const car = state.player.inCar;
+  if (!car) return;
+  const want = Math.atan2(target.y - car.y, target.x - car.x);
+  let diff = want - car.angle;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  car.angle += Math.max(-2.6 * STEP, Math.min(2.6 * STEP, diff));
+  car.speed = Math.min(car.speed + 24 * STEP, 44);
 }
 
-function addCopBehind(world, x, y, angle) {
-  const car = makeCar('police', x, y, angle, '#1c2733', 'police', world.rng);
-  car.speed = 520;
-  car.maxSpeed = 720; // staged pursuit cars keep up with the hero car
-  world.cars.push(car);
-  world.cops.push(car);
-  return car;
+function clearNearbyTraffic(state, x, y, r) {
+  // Staged scenes: keep the road around the player clear so the hero car
+  // reads at a glance instead of drowning in a traffic pile.
+  state.shotMode = true;
+  state.cars = state.cars.filter((c) => c.driver !== 'traffic' || dist(c.x, c.y, x, y) > r);
 }
 
-const EMPTY_CONTROLS = {
-  move: { x: 0, y: 0 }, aim: 0,
-  fire: false, fireHeld: false, handbrake: false, sprint: false,
-  enter: false, interact: false, garage: false,
-  weapon: null, reload: false, radio: false, mute: false, save: false,
-};
+export function stageShot(name, world, renderer) {
+  const state = world;
+  const input = autopilotInput(null);
 
-function stepN(world, controlsFn, seconds) {
-  const steps = Math.floor(seconds / SAMPLE);
-  for (let i = 0; i < steps; i += 1) {
-    const controls = controlsFn(world, i);
-    stepGame(world, { ...EMPTY_CONTROLS, ...controls }, SAMPLE, null);
-    if (world.over && world.overKind !== 'won') {
-      // A staged scene never ends on camera: revive and keep rolling.
-      world.player.dead = false;
-      world.player.health = 80;
-      world.over = false;
-      world.overKind = null;
+  if (name === 'start') {
+    // Cover: Rook tearing east through Downtown in a stolen Falcon GT, 3 stars,
+    // cruisers in pursuit, mission banner up, minimap live.
+    const car = makeCar('sport', 1200, 1440, 0, '#e67e22');
+    car.parked = false; car.driver = 'player';
+    state.cars.push(car);
+    state.player.inCar = car;
+    state.player.x = car.x; state.player.y = car.y;
+    state.player.weapons.smg = 90;
+    state.player.weapon = 'smg';
+    state.money = 1250;
+    state.carsStolen = 1;
+    clearNearbyTraffic(state, car.x, car.y, 700);
+    setWanted(state, 3, 'cover');
+    startMission(state, 1);
+    state.mission.stage = 1;
+    state.objective = 'Escape the police (3 stars) — then Safehouse';
+    showBanner(state, 'THE BAY TRUST JOB', 'Grab the cash and RUN — 3 stars!');
+    state.bannerTimer = 99;
+    const target = { x: 2900, y: 1440 };
+    for (let i = 0; i < 60 * 4; i++) {
+      steerToward(state, target, input);
+      stepGame(state, input, STEP);
+      state.bannerTimer = 99;
     }
+    state.camera = { x: state.player.x, y: state.player.y - 130, zoom: 0.82 };
+    return { screen: 'play', state };
   }
-}
 
-/**
- * Set `world` to the named scene and return the screen to draw over it.
- * Scenes: cover | chase | mission | menu.
- */
-export function stageShot(name, world) {
-  world.money = 12450;
-  world.missionsDone = 2;
   if (name === 'chase') {
-    world.hour = 18.7;
-    world.copCap = 4;
-    world.noRoadblocks = true;
-    putPlayerInCar(world, 'muscle', 4480, 900, Math.PI / 2, '#7a2e8f');
-    world.wanted = 5;
-    world.wantedTimer = 60;
-    startMission(world, 5);
-    world.mission.data.stage = 2;
-    world.mission.data.hasDiamond = true;
-    world.dialogue = null;
-    addCopBehind(world, 4480, 680, Math.PI / 2);
-    addCopBehind(world, 4420, 620, Math.PI / 2);
-    addCopBehind(world, 4540, 740, Math.PI / 2);
-    const drive = makeDriver([
-      { x: 4480, y: 1120 }, { x: 4480, y: 2240 }, { x: 2800, y: 2240 },
-      { x: 2800, y: 1120 },
-    ]);
-    stepN(world, () => drive(world), 2.5);
-    return 'play';
+    // Five-star lockdown at dusk on Beachfront: helicopter, roadblock, cruisers.
+    state.time = 660; // clock 19:36, dusk
+    const car = makeCar('muscle', 1500, 4160, 0, '#922b21');
+    car.parked = false; car.driver = 'player';
+    state.cars.push(car);
+    state.player.inCar = car;
+    state.player.x = car.x; state.player.y = car.y;
+    state.money = 8420;
+    state.missionsDone = 5;
+    state.carsStolen = 4;
+    clearNearbyTraffic(state, car.x, car.y, 700);
+    setWanted(state, 5, 'chase');
+    state.objective = 'Lose a 5-star lockdown, reach Sunset Pier';
+    showMessage(state, '5 STARS! Lose them and reach the Pier!');
+    state.messageTimer = 99;
+    const target = { x: 2800, y: 4160 };
+    for (let i = 0; i < 60 * 5; i++) {
+      steerToward(state, target, input);
+      stepGame(state, input, STEP);
+      state.messageTimer = 99;
+    }
+    state.camera = { x: state.player.x, y: state.player.y + 130, zoom: 0.82 };
+    return { screen: 'play', state };
   }
+
   if (name === 'mission') {
-    world.hour = 18.9;
-    startMission(world, 4);
-    world.mission.data.stage = 1;
-    world.dialogue = null;
-    // Five guards in view for the frame; a short sim so the shootout is
-    // still raging when the frame is taken.
-    world.enemies = world.enemies.slice(0, 5);
-    const w = world.city.specials.warehouse;
-    world.player.x = w.cx - 220;
-    world.player.y = w.cy + 120;
-    world.player.weapon = 'pistol';
-    if (!world.player.weapons.includes('pistol')) world.player.weapons.push('pistol');
-    world.player.ammo.pistol = 24;
-    world.camera.x = world.player.x;
-    world.camera.y = world.player.y;
-    stepN(world, () => {
-      const p = world.player;
-      let target = null;
-      let best = Infinity;
-      for (const e of world.enemies) {
-        if (e.dead) continue;
-        const d = dist(p.x, p.y, e.x, e.y);
-        if (d < best) { best = d; target = e; }
+    // Warehouse shootout on foot: guards, muzzle flashes, SMG in hand.
+    state.time = 240; // clock 18:12, golden hour
+    const p = state.player;
+    p.x = 3350; p.y = 3350; p.angle = -Math.PI / 2;
+    p.weapons.smg = 120; p.weapons.shotgun = 24;
+    p.weapon = 'smg';
+    p.mags.smg = 30;
+    state.money = 3900;
+    state.missionsDone = 3;
+    state.carsStolen = 2;
+    startMission(state, 4);
+    // Rook holds his ground in the open grass south of the warehouse and
+    // trades fire with the crew — he stays put so he reads clearly.
+    const still = { ...input, move: () => ({ x: 0, y: 0 }) };
+    for (let i = 0; i < 60 * 3; i++) {
+      stepGame(state, still, STEP);
+      if (i % 15 === 0) {
+        const alive = state.enemies.filter((e) => !e.dead && e.health > 0);
+        if (alive.length) {
+          const near = alive.reduce((a, b) => ((a.x - p.x) ** 2 + (a.y - p.y) ** 2 < (b.x - p.x) ** 2 + (b.y - p.y) ** 2 ? a : b));
+          fireWeapon(state, near.x, near.y);
+        }
       }
-      if (!target) return { move: { x: 0, y: 0 }, aim: p.angle };
-      const aim = angleTo(p.x, p.y, target.x, target.y);
-      const toward = angleTo(p.x, p.y, target.x, target.y);
-      const mx = Math.cos(toward) * (best > 200 ? 1 : 0);
-      const my = Math.sin(toward) * (best > 200 ? 1 : 0);
-      return { move: { x: mx, y: my }, aim, fire: best < 420, sprint: false };
-    }, 2.5);
-    return 'play';
+    }
+    state.bannerTimer = 0;
+    state.messageTimer = 0;
+    state.camera = { x: p.x, y: p.y, zoom: 1.15 };
+    return { screen: 'play', state };
   }
+
   if (name === 'menu') {
-    world.hour = 16.4;
-    world.camera.x = 2800;
-    world.camera.y = 1400;
-    world.time = 30;
-    return 'title';
+    // Title screen over the live city at golden hour.
+    state.time = 120; // clock 17:48
+    state.missionsDone = 0;
+    return { screen: 'title', state };
   }
-  // Default: cover — a getaway through downtown at golden hour.
-  world.hour = 16.4;
-  world.copCap = 3;
-  world.noRoadblocks = true;
-  putPlayerInCar(world, 'sports', 1680, 560, 0, '#3a7bd5');
-  world.wanted = 3;
-  world.wantedTimer = 60;
-  startMission(world, 2);
-  world.mission.data.stage = 2;
-  world.mission.data.cps = 0;
-  world.dialogue = null;
-  addCopBehind(world, 1530, 560, 0);
-  addCopBehind(world, 1470, 600, 0);
-  const drive = makeDriver([
-    { x: 2240, y: 560 }, { x: 3920, y: 560 }, { x: 3920, y: 1680 },
-    { x: 2240, y: 1680 },
-  ]);
-  stepN(world, () => drive(world), 3);
-  return 'play';
+
+  return { screen: 'title', state };
 }

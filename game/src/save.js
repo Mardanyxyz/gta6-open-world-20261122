@@ -1,80 +1,62 @@
-// Save / load: a single localStorage slot, written after every completed
-// mission and whenever the player saves at the safehouse (F5 or the pause
-// menu). Nothing leaves the browser.
-
-const KEY = 'solara-bay-save-v1';
-
-export function hasSave() {
-  try {
-    return localStorage.getItem(KEY) !== null;
-  } catch {
-    return false;
-  }
-}
-
-export function saveGame(world) {
-  try {
-    const p = world.player;
-    const data = {
-      version: 1,
-      savedAt: new Date().toISOString(),
-      money: world.money,
-      missionsDone: world.missionsDone,
-      hour: world.hour,
-      player: {
-        x: p.inCar ? p.inCar.x : p.x,
-        y: p.inCar ? p.inCar.y : p.y,
-        health: p.health,
-        weapons: p.weapons,
-        ammo: p.ammo,
-        reserve: p.reserve,
-      },
-      garage: world.garage.map((c) => ({ type: c.type, color: c.color })),
-      stats: world.stats,
-    };
-    localStorage.setItem(KEY, JSON.stringify(data));
-    return true;
-  } catch {
-    return false;
-  }
-}
+// Save / load: a small JSON record in localStorage, written at the Safehouse
+// (F) and read back on the title screen. Best score is kept separately.
+import { SAVE_KEY, BEST_KEY } from './config.js';
 
 export function loadSave() {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = window.localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    if (!data || data.version !== 1) return null;
+    if (typeof data.money !== 'number') return null;
     return data;
   } catch {
     return null;
   }
 }
 
-export function applySave(world, data) {
-  world.money = data.money;
-  world.missionsDone = data.missionsDone;
-  world.hour = data.hour ?? 16.2;
-  const p = world.player;
-  p.x = data.player.x;
-  p.y = data.player.y;
-  p.health = data.player.health;
-  p.weapons = data.player.weapons;
-  p.ammo = data.player.ammo;
-  p.reserve = data.player.reserve;
-  p.weapon = p.weapons[p.weapons.length - 1] ?? 'fists';
-  world.garage = data.garage ?? [];
-  world.stats = data.stats ?? world.stats;
-  world.camera.x = p.x;
-  world.camera.y = p.y;
-  world.pendingNext = 1;
-  return true;
+export function writeSave(state) {
+  try {
+    window.localStorage.setItem(SAVE_KEY, JSON.stringify({
+      money: state.money,
+      missionsDone: state.missionsDone,
+      missionIndex: state.missionIndex,
+      score: state.score,
+      kills: state.kills,
+      carsStolen: state.carsStolen,
+      time: state.time,
+      savedAt: new Date().toISOString(),
+    }));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-export function clearSave() {
+export function readBest() {
   try {
-    localStorage.removeItem(KEY);
+    return Number.parseInt(window.localStorage.getItem(BEST_KEY) ?? '0', 10) || 0;
   } catch {
-    // Storage may be unavailable (private mode); saves are best-effort.
+    return 0;
   }
+}
+
+export function saveBest(value) {
+  try {
+    window.localStorage.setItem(BEST_KEY, String(value));
+  } catch {
+    // Storage can be off: the best score then lasts this visit only.
+  }
+}
+
+export function applySave(state, save) {
+  if (!save) return;
+  state.money = save.money ?? state.money;
+  state.missionsDone = save.missionsDone ?? 0;
+  state.missionIndex = save.missionIndex ?? 0;
+  state.score = save.score ?? 0;
+  state.kills = save.kills ?? 0;
+  state.carsStolen = save.carsStolen ?? 0;
+  state.objective = state.missionIndex < 6
+    ? 'Continue: go to the mission marker'
+    : 'All missions complete — free roam!';
 }

@@ -1,430 +1,240 @@
-// The story of Solara Bay: six missions for Rio "Rook" Santana, from his
-// first stolen car to the biggest score in the city's history.
-// Each mission is a small state machine: start() sets it up, update()
-// returns 'done' when the last step lands, objective() is the HUD line, and
-// marker() is the yellow blip on the minimap and the arrow on screen.
-// Between missions the next one waits at the safehouse — walk into the M
-// marker to start it.
+// Six story missions for Rio "Rook" Santana, a getaway driver new in Solara
+// Bay. Each mission is a small state machine: intro dialogue, objectives that
+// complete as the player acts, and a payout. Missions are started by driving
+// or walking into the glowing marker on the map.
+import { MISSION_REWARDS } from './config.js';
+import { dist } from './random.js';
+import { addMoney, showBanner, showMessage, setWanted, addWanted, giveWeapon, nearestCar } from './world.js';
+import { spawnEnemy } from './combat.js';
+import { makeCar } from './world.js';
 
-import { WORLD } from './config.js';
-import { range, dist, angleTo } from './random.js';
-import { makeCar, addWanted, addMessage, playerPos, playerDist, spawnParticles } from './world.js';
-import { giveWeapon, spawnEnemy } from './combat.js';
-import { clearHeat } from './police.js';
+export const MISSION_LIST = [
+  {
+    id: 'first-wheels', title: 'First Wheels', giver: 'Mara',
+    brief: 'Steal any car and bring it to the Safehouse. Rook needs wheels before he can work.',
+    marker: { x: 1180, y: 1300 },
+  },
+  {
+    id: 'bank-job', title: 'The Bay Trust Job', giver: 'Mara',
+    brief: 'Hit the Bay Trust Bank, grab the cash, then lose a 3-star wanted level. Drive fast, Rook.',
+    marker: { x: 2400, y: 1560 },
+  },
+  {
+    id: 'street-race', title: 'Sunset Grand Prix', giver: 'Dante',
+    brief: 'Beat Dante through 5 checkpoints around the Marina. First across the line takes the pot.',
+    marker: { x: 3900, y: 1500 },
+  },
+  {
+    id: 'rescue', title: 'Get Lou Out', giver: 'Mara',
+    brief: 'Lou is pinned down at the Dock Warehouse. Fight through the guards and bring him to the Safehouse.',
+    marker: { x: 3400, y: 3100 },
+  },
+  {
+    id: 'warehouse', title: 'Warehouse War', giver: 'Dante',
+    brief: 'Clear the warehouse crew — 8 guards — then grab the shipment. Bring a gun. Bring two.',
+    marker: { x: 3400, y: 3100 },
+  },
+  {
+    id: 'museum-heist', title: 'The Solara Diamond', giver: 'Mara',
+    brief: 'The big one: lift the Solara Diamond from the museum, then lose a 5-star lockdown and reach the Pier.',
+    marker: { x: 2050, y: 1900 },
+  },
+];
 
-export function setDialogue(world, lines, onDone) {
-  world.dialogue = { lines, index: 0, onDone: onDone ?? null };
+export function startMission(state, index) {
+  const def = MISSION_LIST[index];
+  if (!def) return null;
+  const m = {
+    index, id: def.id, title: def.title, giver: def.giver, brief: def.brief,
+    stage: 0, timer: 0, killsNeeded: 0, kills: 0,
+    checkpoints: [], checkpointIndex: 0,
+    target: null, marker: { ...def.marker },
+    dialogue: [], dialogueIndex: 0,
+    policeBoost: false, completed: false, failed: false,
+  };
+  state.mission = m;
+  state.objective = def.brief;
+  showBanner(state, def.title, `${def.giver}: ${def.brief}`);
+  // Mission-specific setup.
+  if (m.id === 'bank-job') {
+    m.stage = 0; // 0 = reach bank, 1 = grab cash, 2 = escape
+    m.target = { x: 2400, y: 1560 };
+  } else if (m.id === 'street-race') {
+    m.checkpoints = [
+      { x: 3600, y: 1000 }, { x: 3000, y: 900 }, { x: 2500, y: 1900 },
+      { x: 3400, y: 2400 }, { x: 3900, y: 1500 },
+    ];
+    m.raceCar = spawnRaceRival(state);
+    m.target = m.checkpoints[0];
+    m.raceProgress = 0;
+  } else if (m.id === 'rescue' || m.id === 'warehouse') {
+    const spots = [
+      [3260, 2980], [3520, 2960], [3300, 3220], [3560, 3240],
+      [3180, 3120], [3620, 3100], [3400, 2900], [3400, 3300],
+    ];
+    m.killsNeeded = m.id === 'warehouse' ? 8 : 4;
+    for (let i = 0; i < m.killsNeeded; i++) {
+      const [x, y] = spots[i];
+      spawnEnemy(state, x, y, { health: 70, kind: 'crew' });
+    }
+    m.target = { x: 3400, y: 3100 };
+    if (m.id === 'rescue') m.stage = 0; // 0 = clear guards, 1 = escort Lou home
+  } else if (m.id === 'museum-heist') {
+    for (const [x, y] of [[1960, 1820], [2140, 1820], [1960, 1980], [2140, 1980], [2050, 1740]]) {
+      spawnEnemy(state, x, y, { health: 80, kind: 'museum-guard', colour: '#1b4f72' });
+    }
+    m.stage = 0; // 0 = reach museum, 1 = grab diamond, 2 = escape to pier
+    m.target = { x: 2050, y: 1900 };
+  }
+  return m;
 }
 
-export function advanceDialogue(world) {
-  const d = world.dialogue;
-  if (!d) return;
-  d.index += 1;
-  if (d.index >= d.lines.length) {
-    const cb = d.onDone;
-    world.dialogue = null;
-    if (cb) cb();
+function spawnRaceRival(state) {
+  const car = makeCar('sport', 3840, 1560, -Math.PI / 2, '#f1c40f');
+  car.parked = false; car.driver = 'rival';
+  state.cars.push(car);
+  return car;
+}
+
+export function completeMission(state) {
+  const m = state.mission;
+  if (!m) return;
+  const reward = MISSION_REWARDS[m.index] || 500;
+  m.completed = true;
+  state.missionsDone += 1;
+  state.missionIndex = Math.min(state.missionIndex + 1, MISSION_LIST.length);
+  addMoney(state, reward, `${m.title} complete`);
+  showBanner(state, 'MISSION PASSED', `${m.title} — $${reward}`);
+  state.objective = state.missionIndex < MISSION_LIST.length
+    ? `Go to the ${MISSION_LIST[state.missionIndex].title} marker (${MISSION_LIST[state.missionIndex].giver})`
+    : 'All missions complete — Solara Bay is yours. Free roam!';
+  state.mission = null;
+  state.wanted = Math.max(0, state.wanted - 1);
+}
+
+export function failMission(state, why) {
+  const m = state.mission;
+  if (!m) return;
+  m.failed = true;
+  showBanner(state, 'MISSION FAILED', why || 'Try again at the marker');
+  state.mission = null;
+  state.objective = 'Return to the mission marker to retry';
+}
+
+function atTarget(state, target, radius = 90) {
+  const p = state.player;
+  const x = p.inCar ? p.inCar.x : p.x;
+  const y = p.inCar ? p.inCar.y : p.y;
+  return dist(x, y, target.x, target.y) < radius;
+}
+
+export function stepMissions(state, dt) {
+  const m = state.mission;
+  if (!m) return;
+  m.timer += dt;
+  const p = state.player;
+
+  if (m.id === 'first-wheels') {
+    if (p.inCar && atTarget(state, { x: 1080, y: 1180 }, 130)) completeMission(state);
+    else if (p.inCar) state.objective = 'Drive the stolen car to the Safehouse (orange house)';
+  } else if (m.id === 'bank-job') {
+    if (m.stage === 0 && atTarget(state, m.target, 90)) {
+      m.stage = 1;
+      addMoney(state, 600, 'Bank cash grabbed');
+      setWanted(state, 3, 'bank');
+      showMessage(state, 'Grab the cash and RUN — 3 stars!');
+      m.target = { x: 1080, y: 1180 };
+      state.objective = 'Lose the cops, then reach the Safehouse';
+    } else if (m.stage === 1) {
+      if (state.wanted === 0 && atTarget(state, m.target, 130)) completeMission(state);
+      else if (state.wanted === 0) state.objective = 'Cops lost — reach the Safehouse';
+      else state.objective = `Escape the police (${state.wanted} stars) — then Safehouse`;
+    }
+  } else if (m.id === 'street-race') {
+    const cp = m.checkpoints[m.checkpointIndex];
+    if (cp && atTarget(state, cp, 110)) {
+      m.checkpointIndex += 1;
+      m.raceProgress = m.checkpointIndex;
+      showMessage(state, `Checkpoint ${m.checkpointIndex}/5`);
+      if (m.checkpointIndex >= m.checkpoints.length) {
+        completeMission(state);
+        return;
+      }
+      m.target = m.checkpoints[m.checkpointIndex];
+      state.objective = `Race: checkpoint ${m.checkpointIndex + 1}/5`;
+    } else if (cp) {
+      m.target = cp;
+      state.objective = `Race: checkpoint ${m.checkpointIndex + 1}/5 — beat Dante!`;
+    }
+    // Rival drives the checkpoint route; if the player is far behind too long, Dante wins.
+    if (m.raceCar) {
+      const rival = m.raceCar;
+      const rcp = m.checkpoints[Math.min(m.checkpointIndex, m.checkpoints.length - 1)];
+      const want = Math.atan2(rcp.y - rival.y, rcp.x - rival.x);
+      rival.angle += Math.max(-2.4 * dt, Math.min(2.4 * dt, want - rival.angle));
+      rival.speed = Math.min(rival.speed + 20 * dt, 42);
+      rival.x += Math.cos(rival.angle) * rival.speed * dt;
+      rival.y += Math.sin(rival.angle) * rival.speed * dt;
+    }
+    if (m.timer > 150) failMission(state, 'Dante won the race');
+  } else if (m.id === 'rescue') {
+    const alive = state.enemies.filter((e) => !e.dead && e.health > 0).length;
+    if (m.stage === 0) {
+      state.objective = `Clear the warehouse guards (${m.killsNeeded - alive}/${m.killsNeeded})`;
+      if (alive === 0) {
+        m.stage = 1;
+        m.target = { x: 1080, y: 1180 };
+        showMessage(state, 'Lou is safe! Get him to the Safehouse');
+        state.objective = 'Drive Lou to the Safehouse';
+      }
+    } else if (atTarget(state, m.target, 130)) completeMission(state);
+  } else if (m.id === 'warehouse') {
+    const alive = state.enemies.filter((e) => !e.dead && e.health > 0).length;
+    state.objective = `Clear the crew (${m.killsNeeded - alive}/${m.killsNeeded} down)`;
+    if (alive === 0) {
+      addMoney(state, 800, 'Shipment seized');
+      completeMission(state);
+    }
+  } else if (m.id === 'museum-heist') {
+    if (m.stage === 0 && atTarget(state, m.target, 90)) {
+      m.stage = 1;
+      addWanted(state, 2);
+      showMessage(state, 'Inside! Grab the diamond — alarms are going off');
+      state.objective = 'Grab the Solara Diamond (walk into the gold case)';
+      m.target = { x: 2050, y: 1900 };
+    } else if (m.stage === 1) {
+      if (!p.inCar && dist(p.x, p.y, 2050, 1900) < 46) {
+        m.stage = 2;
+        addMoney(state, 1500, 'Diamond lifted');
+        setWanted(state, 5, 'museum');
+        m.target = { x: 2500, y: 4480 };
+        state.objective = 'Lose a 5-star lockdown, reach Sunset Pier';
+        showMessage(state, '5 STARS! Lose them and reach the Pier!');
+      }
+    } else if (m.stage === 2) {
+      if (state.wanted === 0 && atTarget(state, m.target, 130)) completeMission(state);
+      else state.objective = `Escape (${state.wanted} stars), then reach Sunset Pier`;
+    }
   }
 }
 
-function markerAt(world, x, y, label) {
-  return { x, y, label: label ?? '' };
+// The glowing marker for the next mission, when no mission is active.
+export function nextMissionMarker(state) {
+  if (state.mission) return state.mission.target || state.mission.marker;
+  if (state.missionIndex >= MISSION_LIST.length) return null;
+  return MISSION_LIST[state.missionIndex].marker;
 }
 
-// The street-race loop: six gates around the middle of the city.
-const RACE_POINTS = [
-  { x: 2800, y: 280 }, { x: 4480, y: 280 }, { x: 4480, y: 1680 },
-  { x: 2800, y: 1680 }, { x: 1120, y: 1680 }, { x: 1120, y: 280 },
-];
-
-const ESCAPE_POINTS = [
-  { x: 1120, y: 280 }, { x: 4480, y: 2800 }, { x: 280, y: 2800 },
-];
-
-export const MISSIONS = [
-  {
-    id: 'first-wheels',
-    title: '1 — First Wheels',
-    giver: 'Mia',
-    payout: 500,
-    briefing: [
-      { who: 'MIA', text: 'Rook. You are in my city now, and in my city nobody walks. See that blue coupe by the house? It is yours. The rest are not — yet.' },
-      { who: 'MIA', text: 'Walk up to any car and press E to take it. Then bring it home to the garage. Try not to scratch the paint. Actually — scratch it. Paint is cheap.' },
-    ],
-    start(world) {
-      world.mission.data = { stage: 0 };
-    },
-    objective(world) {
-      return world.mission.data.stage === 0
-        ? 'Steal a car — walk up to one and press E'
-        : 'Drive home to the garage';
-    },
-    marker(world) {
-      if (world.mission.data.stage === 0) return null;
-      const g = world.city.specials.garage;
-      return markerAt(world, g.doorX, g.doorY, 'GARAGE');
-    },
-    update(world) {
-      const d = world.mission.data;
-      if (d.stage === 0 && world.player.inCar) {
-        d.stage = 1;
-        addMessage(world, 'Nice. Now bring it home.', '#ffd76a');
-      } else if (d.stage === 1) {
-        const g = world.city.specials.garage;
-        if (world.player.inCar && playerDist(world, g.doorX, g.doorY) < 90) return 'done';
-      }
-      return null;
-    },
-  },
-  {
-    id: 'the-pickup',
-    title: '2 — The Pickup',
-    giver: 'Big Lou',
-    payout: 800,
-    briefing: [
-      { who: 'BIG LOU', text: 'Rook, I hear you drive. A package is waiting at the docks — Pier 9, east side. Bring it to the Solara Hotel on the beach. No detours, no sightseeing.' },
-      { who: 'MIA', text: 'Take my pistol, Rook. The docks are not a friendly place after dark. Press 2 to draw it, click to fire, R to reload.' },
-    ],
-    start(world) {
-      world.mission.data = { stage: 0, tipped: false };
-      giveWeapon(world, 'pistol');
-      world.player.ammo.pistol = Math.max(world.player.ammo.pistol, 24);
-      world.player.reserve.pistol += 48;
-    },
-    objective(world) {
-      const d = world.mission.data;
-      if (d.stage === 0) return 'Drive to the docks — Pier 9';
-      if (d.stage === 1) return 'Get out and grab the package (E)';
-      return 'Deliver the package to the Solara Hotel';
-    },
-    marker(world) {
-      const d = world.mission.data;
-      const s = world.city.specials;
-      if (d.stage === 0) return markerAt(world, s.docks.cx, s.docks.cy, 'DOCKS');
-      if (d.stage === 1) return markerAt(world, s.docks.cx, s.docks.cy, 'PACKAGE');
-      return markerAt(world, s.hotel.doorX, s.hotel.doorY, 'HOTEL');
-    },
-    update(world) {
-      const d = world.mission.data;
-      const s = world.city.specials;
-      if (d.stage === 0 && playerDist(world, s.docks.cx, s.docks.cy) < 110) {
-        d.stage = 1;
-        addMessage(world, 'The package is on the crate. Grab it.', '#ffd76a');
-      } else if (d.stage === 1) {
-        if (!world.player.inCar && playerDist(world, s.docks.cx, s.docks.cy) < 70 && world.inputAction) {
-          d.stage = 2;
-          d.hasPackage = true;
-          addMessage(world, 'Package secured. Move!', '#ffd76a');
-        }
-      } else if (d.stage === 2) {
-        if (!d.tipped && playerDist(world, s.hotel.doorX, s.hotel.doorY) < 700) {
-          d.tipped = true;
-          addWanted(world, 1, 'someone tipped off the cops');
-        }
-        if (playerDist(world, s.hotel.doorX, s.hotel.doorY) < 100) return 'done';
-      }
-      return null;
-    },
-  },
-  {
-    id: 'getaway',
-    title: '3 — Getaway',
-    giver: 'Big Lou',
-    payout: 1500,
-    briefing: [
-      { who: 'BIG LOU', text: 'The crew hits the First Bay Bank at noon. You are the wheel. Park outside, wait for my word, and when the alarms go — you drive like the whole city is on fire. Because it will be.' },
-      { who: 'MIA', text: 'I tuned your car, Rook. And I left something in the glovebox. Press 2 for the pistol, and — new toy — an SMG is in there too when things get loud.' },
-    ],
-    start(world) {
-      world.mission.data = { stage: 0, wait: 0, cps: 0 };
-      giveWeapon(world, 'smg');
-      world.player.ammo.smg = 30;
-      world.player.reserve.smg += 90;
-    },
-    objective(world) {
-      const d = world.mission.data;
-      if (d.stage === 0) return 'Drive to the First Bay Bank';
-      if (d.stage === 1) return 'Wait for the crew — stay by the bank';
-      return `Escape! Reach checkpoint ${d.cps + 1} of 3`;
-    },
-    marker(world) {
-      const d = world.mission.data;
-      const s = world.city.specials;
-      if (d.stage === 0 || d.stage === 1) return markerAt(world, s.bank.doorX, s.bank.doorY, 'BANK');
-      const cp = ESCAPE_POINTS[Math.min(d.cps, 2)];
-      return markerAt(world, cp.x, cp.y, `ESCAPE ${d.cps + 1}/3`);
-    },
-    update(world, dt) {
-      const d = world.mission.data;
-      const s = world.city.specials;
-      if (d.stage === 0 && world.player.inCar && playerDist(world, s.bank.doorX, s.bank.doorY) < 130) {
-        d.stage = 1;
-        d.wait = 0;
-        addMessage(world, 'The crew is inside. Hold position...', '#ffd76a');
-      } else if (d.stage === 1) {
-        d.wait += dt;
-        if (playerDist(world, s.bank.doorX, s.bank.doorY) > 260) {
-          d.wait = 0;
-          addMessage(world, 'Too far! Get back to the bank!', '#ff5a4e');
-        }
-        if (d.wait >= 8) {
-          d.stage = 2;
-          addWanted(world, 3, 'the bank alarms are screaming');
-          addMessage(world, 'GO GO GO! Lose them!', '#ff5a4e');
-        }
-      } else if (d.stage === 2) {
-        const cp = ESCAPE_POINTS[d.cps];
-        if (playerDist(world, cp.x, cp.y) < 110) {
-          d.cps += 1;
-          spawnParticles(world, cp.x, cp.y, 20, '#ffd76a', 200, 0.7, 4);
-          if (d.cps >= 3) {
-            clearHeat(world);
-            return 'done';
-          }
-          addMessage(world, `Checkpoint ${d.cps} of 3 — keep moving!`, '#ffd76a');
-        }
-      }
-      return null;
-    },
-  },
-  {
-    id: 'bay-street-race',
-    title: '4 — Bay Street Race',
-    giver: 'Vex',
-    payout: 2500,
-    briefing: [
-      { who: 'VEX', text: 'So you are the new wheel in town. Cute. Tonight, six blocks, five gates, three of my best drivers. Beat them and the streets are yours. Lose and you walk home.' },
-      { who: 'MIA', text: 'Vex plays dirty, Rook. Her drivers will ram you. Just stay on the gates — follow the yellow markers — and do not let them push you into a wall.' },
-    ],
-    start(world) {
-      world.mission.data = { stage: 0, cp: 0, finished: null, rivalsDone: 0 };
-      world.race = { checkpoints: RACE_POINTS, rivals: [], rivalCp: [0, 0, 0], done: [false, false, false] };
-      const start = { x: 2800, y: 840 };
-      const colors = ['#a33a5c', '#2e8f7a', '#d56a3a'];
-      for (let i = 0; i < 3; i += 1) {
-        const car = makeCar('sports', start.x - 90 - i * 80, start.y + (i - 1) * 90, 0, colors[i], 'rival', world.rng);
-        car.targetSpeed = 400 + i * 15;
-        world.cars.push(car);
-        world.race.rivals.push(car);
-      }
-    },
-    objective(world) {
-      const d = world.mission.data;
-      if (d.stage === 0) return 'Drive to the race start — Bay Boulevard';
-      if (d.finished) return 'Race over — see the results';
-      return `Race! Gate ${d.cp + 1} of ${RACE_POINTS.length}`;
-    },
-    marker(world) {
-      const d = world.mission.data;
-      if (d.stage === 0) return markerAt(world, 2800, 840, 'RACE START');
-      if (d.finished) return null;
-      const cp = RACE_POINTS[d.cp];
-      return markerAt(world, cp.x, cp.y, `GATE ${d.cp + 1}`);
-    },
-    update(world, dt) {
-      const d = world.mission.data;
-      if (d.stage === 0) {
-        if (playerDist(world, 2800, 840) < 120) {
-          d.stage = 1;
-          addMessage(world, '3... 2... 1... GO!', '#ffd76a');
-        }
-        return null;
-      }
-      if (d.finished) return 'done';
-      // Rivals: steer at their next gate, slide around buildings.
-      const race = world.race;
-      for (let i = 0; i < race.rivals.length; i += 1) {
-        const car = race.rivals[i];
-        if (race.done[i] || car.dead) continue;
-        const cp = RACE_POINTS[race.rivalCp[i]];
-        const want = angleTo(car.x, car.y, cp.x, cp.y);
-        const diff = (want - car.angle + Math.PI * 3) % (Math.PI * 2) - Math.PI;
-        car.angle += Math.max(-1.6, Math.min(1.6, diff * 2)) * dt;
-        car.speed += (car.targetSpeed - car.speed) * dt * 0.8;
-        const nx = car.x + Math.cos(car.angle) * car.speed * dt;
-        const ny = car.y + Math.sin(car.angle) * car.speed * dt;
-        if (!world.city.hitsBuilding(nx, ny, 26)) {
-          car.x = nx;
-          car.y = ny;
-        } else {
-          car.speed *= 0.4;
-          car.angle += 0.9 * dt * 8;
-        }
-        if (dist(car.x, car.y, cp.x, cp.y) < 110) {
-          race.rivalCp[i] += 1;
-          if (race.rivalCp[i] >= RACE_POINTS.length) {
-            race.done[i] = true;
-            d.rivalsDone += 1;
-            addMessage(world, `A rival finished — ${d.rivalsDone} ahead of you!`, '#ff9a4e');
-          }
-        }
-      }
-      // Player gates.
-      const cp = RACE_POINTS[d.cp];
-      if (playerDist(world, cp.x, cp.y) < 110) {
-        d.cp += 1;
-        spawnParticles(world, cp.x, cp.y, 20, '#ffd76a', 200, 0.7, 4);
-        if (d.cp >= RACE_POINTS.length) {
-          d.finished = true;
-          const place = d.rivalsDone + 1;
-          const payouts = [2500, 1200, 600, 300];
-          d.racePayout = payouts[place - 1];
-          addMessage(
-            world,
-            place === 1 ? 'YOU WIN THE RACE!' : `You finished #${place}`,
-            place === 1 ? '#ffd76a' : '#ffffff',
-          );
-          for (const car of race.rivals) car.driver = 'traffic';
-          world.race = null;
-          return 'done';
-        }
-        addMessage(world, `Gate ${d.cp} of ${RACE_POINTS.length}`, '#ffd76a');
-      }
-      return null;
-    },
-  },
-  {
-    id: 'the-rescue',
-    title: '5 — The Rescue',
-    giver: 'Big Lou',
-    payout: 2000,
-    briefing: [
-      { who: 'BIG LOU', text: 'They took Mia. The Vipers grabbed her off the Marina and they are holding her in the old warehouse, Industrial Quarter. Six of their boys, all armed.' },
-      { who: 'BIG LOU', text: 'Go in loud, Rook. Get my girl out. And Rook — bring her home safe, or do not come home at all.' },
-    ],
-    start(world) {
-      const w = world.city.specials.warehouse;
-      world.mission.data = { stage: 0, guardsLeft: 6, mia: null };
-      // Guards hold the yard around the warehouse — outside its walls, so
-      // they are visible and can move. Three at the south door, the rest on
-      // the flanks and the north side.
-      const spots = [
-        { x: w.cx - 120, y: w.y + w.h + 46 },
-        { x: w.cx, y: w.y + w.h + 46 },
-        { x: w.cx + 120, y: w.y + w.h + 46 },
-        { x: w.x - 46, y: w.cy },
-        { x: w.x + w.w + 46, y: w.cy },
-        { x: w.cx, y: w.y - 46 },
-      ];
-      for (const s of spots) spawnEnemy(world, s.x, s.y, { health: 70, role: 'viper' });
-    },
-    objective(world) {
-      const d = world.mission.data;
-      if (d.stage === 0) return 'Reach the warehouse — Industrial Quarter';
-      if (d.stage === 1) return `Take out the Vipers — ${d.guardsLeft} left`;
-      if (d.stage === 2) return 'Reach Mia!';
-      return 'Get Mia home to the safehouse!';
-    },
-    marker(world) {
-      const d = world.mission.data;
-      const s = world.city.specials;
-      if (d.stage === 0 || d.stage === 1) return markerAt(world, s.warehouse.cx, s.warehouse.cy, 'WAREHOUSE');
-      if (d.stage === 2) return markerAt(world, d.mia.x, d.mia.y, 'MIA');
-      return markerAt(world, s.safehouse.doorX, s.safehouse.doorY, 'SAFEHOUSE');
-    },
-    update(world) {
-      const d = world.mission.data;
-      const s = world.city.specials;
-      if (d.stage === 0 && playerDist(world, s.warehouse.cx, s.warehouse.cy) < 320) {
-        d.stage = 1;
-        addMessage(world, 'Six Vipers between you and Mia. Go loud.', '#ff5a4e');
-      } else if (d.stage === 1) {
-        const left = world.enemies.filter((e) => !e.dead && e.role === 'viper').length;
-        d.guardsLeft = left;
-        if (left === 0) {
-          d.stage = 2;
-          const w = world.city.specials.warehouse;
-          // Mia waits by the south door — in the open yard, never inside a wall.
-          d.mia = { x: w.doorX, y: w.doorY + 26 };
-          addMessage(world, 'MIA: Rook! I knew you would come!', '#8fd6a0');
-        }
-      } else if (d.stage === 2) {
-        if (playerDist(world, d.mia.x, d.mia.y) < 60) {
-          d.stage = 3;
-          addMessage(world, 'MIA: Let us go home. Drive, Rook!', '#8fd6a0');
-        }
-      } else if (d.stage === 3) {
-        if (playerDist(world, s.safehouse.doorX, s.safehouse.doorY) < 120) return 'done';
-      }
-      return null;
-    },
-  },
-  {
-    id: 'the-big-score',
-    title: '6 — The Big Score',
-    giver: 'Big Lou',
-    payout: 5000,
-    briefing: [
-      { who: 'BIG LOU', text: 'One last job, Rook. The Solara Diamond sits in the museum vault — one stone, eight million dollars, and a whole police department that wants it to stay there.' },
-      { who: 'MIA', text: 'The vault door is on the south side. Grab the stone, get to the yacht at the docks, and do not stop for anything. Not the cops, not the helicopter — nothing.' },
-      { who: 'BIG LOU', text: 'Do this and we are legends, kid. The whole Bay will know the name Rook.' },
-    ],
-    start(world) {
-      world.mission.data = { stage: 0, hasDiamond: false };
-    },
-    objective(world) {
-      const d = world.mission.data;
-      if (d.stage === 0) return 'Reach the Solara Museum — Downtown';
-      if (d.stage === 1) return 'Grab the Solara Diamond (E at the vault)';
-      return 'Escape to the yacht at the docks — 5 stars!';
-    },
-    marker(world) {
-      const d = world.mission.data;
-      const s = world.city.specials;
-      if (d.stage === 0 || d.stage === 1) return markerAt(world, s.museum.doorX, s.museum.doorY, 'MUSEUM');
-      return markerAt(world, s.yacht.x, s.yacht.y, 'YACHT');
-    },
-    update(world) {
-      const d = world.mission.data;
-      const s = world.city.specials;
-      if (d.stage === 0 && playerDist(world, s.museum.doorX, s.museum.doorY) < 130) {
-        d.stage = 1;
-        addMessage(world, 'The vault is inside. Go in on foot and grab it.', '#ffd76a');
-      } else if (d.stage === 1) {
-        if (!world.player.inCar && playerDist(world, s.museum.doorX, s.museum.doorY) < 60 && world.inputAction) {
-          d.stage = 2;
-          d.hasDiamond = true;
-          addWanted(world, 5, 'the Solara Diamond is gone!');
-          addMessage(world, 'THE DIAMOND IS YOURS! RUN!', '#ffd76a');
-        }
-      } else if (d.stage === 2) {
-        if (playerDist(world, s.yacht.x, s.yacht.y) < 130) return 'done';
-      }
-      return null;
-    },
-  },
-];
-
-export function missionCount() {
-  return MISSIONS.length;
-}
-
-/** Start mission `index` (0-based) on the world. */
-export function startMission(world, index) {
-  const def = MISSIONS[index];
-  world.mission = { index, def, data: {}, startedAt: world.time };
-  world.missionBanner = { title: def.title, giver: def.giver, t: 0 };
-  def.start(world);
-  setDialogue(world, def.briefing);
-}
-
-/** Complete the active mission: payout, respect, banner. */
-export function completeMission(world) {
-  const m = world.mission;
-  const payout = m.data.racePayout ?? m.def.payout;
-  world.money += payout;
-  world.missionsDone += 1;
-  world.stats.missions += 1;
-  addMessage(world, `MISSION COMPLETE — +$${payout}`, '#ffd76a');
-  world.missionBanner = { title: `${m.def.title} — COMPLETE`, giver: `+$${payout}`, t: 0 };
-  world.mission = null;
-  world.pendingNext = 2.5; // seconds until the next mission marker appears
-  return true;
-}
-
-/** The marker for the next mission while between missions. */
-export function nextMissionMarker(world) {
-  if (world.missionsDone >= MISSIONS.length) return null;
-  const s = world.city.specials.safehouse;
-  return markerAt(world, s.doorX, s.doorY - 40, 'M');
+export function tryStartMission(state) {
+  if (state.mission) return false;
+  if (state.missionIndex >= MISSION_LIST.length) return false;
+  const marker = MISSION_LIST[state.missionIndex].marker;
+  const p = state.player;
+  const x = p.inCar ? p.inCar.x : p.x;
+  const y = p.inCar ? p.inCar.y : p.y;
+  if (dist(x, y, marker.x, marker.y) < 120) {
+    startMission(state, state.missionIndex);
+    return true;
+  }
+  return false;
 }

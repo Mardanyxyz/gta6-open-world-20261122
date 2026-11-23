@@ -1,220 +1,198 @@
-// Combat: fists, pistol and SMG for the player, and the guards and rivals
-// who shoot back. Bullets are fast tracers with a short life; enemies are
-// simple state machines — hold position, chase, shoot — with lousy aim at
-// range so a fair fight stays winnable.
+// Combat: fists, pistol, SMG and shotgun for the player; armed enemies who
+// take cover and shoot back; bullets, muzzle flashes, blood and smoke.
+import { WEAPONS, PLAYER } from './config.js';
+import { clamp, dist } from './random.js';
+import { currentWeapon, damagePlayer, showMessage, addWanted } from './world.js';
 
-import { WEAPONS } from './config.js';
-import { range, chance, clamp, dist, angleTo, angleDiff } from './random.js';
-import { spawnParticles, addWanted, addMessage, playerPos } from './world.js';
-
-export function giveWeapon(world, name) {
-  const p = world.player;
-  if (!p.weapons.includes(name)) p.weapons.push(name);
-  p.weapon = name;
-  if (name === 'pistol' && p.ammo.pistol === 0) p.ammo.pistol = WEAPONS.pistol.ammo;
-  if (name === 'smg' && p.ammo.smg === 0) p.ammo.smg = WEAPONS.smg.ammo;
-}
-
-export function fireWeapon(world) {
-  const p = world.player;
-  if (p.inCar || p.cooldown > 0 || p.dead) return false;
-  const spec = WEAPONS[p.weapon];
-  if (p.weapon !== 'fists') {
-    if (p.ammo[p.weapon] <= 0) {
-      p.cooldown = 0.3;
-      return false; // click — empty; R reloads
-    }
-    p.ammo[p.weapon] -= 1;
-  }
-  p.cooldown = spec.rate;
-  world.stats.shots += 1;
-  const spread = p.weapon === 'smg' ? 0.09 : 0.03;
-  const angle = p.angle + range(world.rng, -spread, spread);
-  const mx = p.x + Math.cos(p.angle) * 20;
-  const my = p.y + Math.sin(p.angle) * 20;
-
+export function fireWeapon(state, targetX, targetY) {
+  const p = state.player;
+  const w = currentWeapon(state);
+  if (p.shootTimer > 0 || p.reloadTimer > 0) return false;
   if (p.weapon === 'fists') {
-    // A short swing: anything in front and close takes the hit.
-    for (const e of world.enemies) {
-      if (e.dead) continue;
-      const facing = Math.abs(angleDiff(p.angle, angleTo(p.x, p.y, e.x, e.y))) < 0.9;
-      if (facing && dist(p.x, p.y, e.x, e.y) < spec.range + 14) damageEnemy(world, e, spec.damage);
-    }
-    for (const ped of world.peds) {
-      if (ped.dead) continue;
-      const facing = Math.abs(angleDiff(p.angle, angleTo(p.x, p.y, ped.x, ped.y))) < 0.9;
-      if (facing && dist(p.x, p.y, ped.x, ped.y) < spec.range) {
-        ped.dead = true;
-        world.stats.kills += 1;
-        addWanted(world, 1, 'assault');
+    p.shootTimer = w.rate;
+    p.punchTimer = 0.3;
+    // Punch: hurt the nearest enemy or ped in range, in the facing direction.
+    const aim = Math.atan2(targetY - p.y, targetX - p.x);
+    let hitAny = false;
+    for (const e of state.enemies) {
+      if (e.health <= 0) continue;
+      const d = dist(p.x, p.y, e.x, e.y);
+      const ang = Math.atan2(e.y - p.y, e.x - p.x);
+      if (d < PLAYER.punchRange + 14 && Math.abs(ang - aim) < 1.1) {
+        hurtEnemy(state, e, w.damage, aim);
+        hitAny = true;
       }
     }
-    spawnParticles(world, mx, my, 3, '#ffffff', 60, 0.15, 2);
+    if (!hitAny) {
+      for (const car of state.cars) {
+        if (dist(p.x, p.y, car.x, car.y) < 60) { car.health -= 4; break; }
+      }
+    }
     return true;
   }
-
-  world.bullets.push({
-    x: mx, y: my, angle, speed: 1050,
-    life: spec.range / 1050 + 0.05, from: 'player', damage: spec.damage,
-  });
-  spawnParticles(world, mx, my, 4, '#ffd76a', 140, 0.18, 3);
-  // Gunfire in public draws the law.
-  addWanted(world, 1, 'shots fired');
+  if (p.mags[p.weapon] <= 0) {
+    reloadWeapon(state);
+    return false;
+  }
+  p.mags[p.weapon] -= 1;
+  p.shootTimer = w.rate;
+  state.stats.shotsFired += 1;
+  const base = Math.atan2(targetY - p.y, targetX - p.x);
+  const pellets = w.pellets || 1;
+  for (let i = 0; i < pellets; i++) {
+    const ang = base + (Math.random() - 0.5) * w.spread * 2;
+    state.bullets.push({
+      x: p.x + Math.cos(base) * 20, y: p.y + Math.sin(base) * 20,
+      vx: Math.cos(ang) * w.speed, vy: Math.sin(ang) * w.speed,
+      damage: w.damage, life: w.range / w.speed, friendly: true, kind: 'player',
+    });
+  }
+  state.particles.push({ x: p.x + Math.cos(base) * 24, y: p.y + Math.sin(base) * 24, vx: 0, vy: 0, life: 0.07, max: 0.07, kind: 'flash', size: 18 });
+  p.angle = base;
+  if (state.wanted < 1) {
+    // Firing in public draws the law.
+    addWanted(state, 1);
+    showMessage(state, 'Gunfire reported — the SBPD is coming');
+  }
   return true;
 }
 
-export function reloadWeapon(world) {
-  const p = world.player;
-  const spec = WEAPONS[p.weapon];
-  if (!spec || p.weapon === 'fists') return;
-  const need = spec.ammo - p.ammo[p.weapon];
-  if (need <= 0 || p.reserve[p.weapon] <= 0) return;
-  const take = Math.min(need, p.reserve[p.weapon]);
-  p.ammo[p.weapon] += take;
-  p.reserve[p.weapon] -= take;
-  p.cooldown = Math.max(p.cooldown, 0.5);
+export function reloadWeapon(state) {
+  const p = state.player;
+  const w = currentWeapon(state);
+  if (!w.mag || p.weapon === 'fists') return;
+  if (p.reloadTimer > 0) return;
+  const need = w.mag - p.mags[p.weapon];
+  const have = p.weapons[p.weapon] || 0;
+  if (need <= 0 || have <= 0) return;
+  p.reloadTimer = 0.9;
+  p.reloadPending = Math.min(need, have);
 }
 
-export function damageEnemy(world, enemy, dmg) {
-  enemy.health -= dmg;
-  world.stats.hits += 1;
-  spawnParticles(world, enemy.x, enemy.y, 5, '#ff5a4e', 130, 0.4, 3);
-  if (enemy.health <= 0 && !enemy.dead) {
+export function finishReload(state) {
+  const p = state.player;
+  if (!p.reloadPending) return;
+  p.mags[p.weapon] += p.reloadPending;
+  p.weapons[p.weapon] -= p.reloadPending;
+  p.reloadPending = 0;
+}
+
+export function hurtEnemy(state, enemy, damage, angle) {
+  enemy.health -= damage;
+  enemy.lastHit = 0;
+  state.stats.shotsHit += 1;
+  state.particles.push({ x: enemy.x, y: enemy.y, vx: Math.cos(angle) * 80, vy: Math.sin(angle) * 80, life: 0.3, max: 0.3, kind: 'blood', size: 8 });
+  if (enemy.health <= 0) {
     enemy.dead = true;
-    world.stats.kills += 1;
-    spawnParticles(world, enemy.x, enemy.y, 14, '#ff5a4e', 200, 0.7, 4);
-    if (chance(world.rng, 0.5)) {
-      world.pickups.push({ x: enemy.x, y: enemy.y, kind: 'cash', amount: 120, bob: 0 });
+    state.kills += 1;
+    state.score += 50;
+    if (Math.random() < 0.5) {
+      state.pickups.push({ kind: 'cash', x: enemy.x, y: enemy.y, amount: 40 + Math.floor(Math.random() * 80), taken: false, bob: 0 });
     }
   }
 }
 
-export function damagePlayer(world, dmg) {
-  const p = world.player;
-  if (p.dead || world.over) return;
-  p.health -= dmg;
-  p.hurtFlash = 0.35;
-  world.shake = Math.max(world.shake, 4);
-  if (p.health <= 0) {
-    p.health = 0;
-    p.dead = true;
-    world.over = true;
-    world.overKind = 'wasted';
-    spawnParticles(world, p.x, p.y, 24, '#ff5a4e', 220, 0.9, 5);
-  }
-}
-
-/** Spawn a guard / rival gunman at a point. */
-export function spawnEnemy(world, x, y, opts) {
+export function spawnEnemy(state, x, y, opts = {}) {
   const e = {
-    x, y, angle: range(world.rng, 0, Math.PI * 2),
-    health: opts?.health ?? 70,
-    speed: opts?.speed ?? 130,
-    damage: opts?.damage ?? 9,
-    shootTimer: range(world.rng, 0.4, 1.2),
-    state: opts?.state ?? 'guard', // guard | chase | hold
-    dead: false,
-    guardX: x, guardY: y,
-    role: opts?.role ?? 'guard',
+    x, y, angle: Math.random() * Math.PI * 2,
+    health: opts.health || 60, speed: opts.speed || 120,
+    shootTimer: 1 + Math.random(), burst: 0,
+    kind: opts.kind || 'guard', colour: opts.colour || '#7b2d26',
+    weapon: opts.weapon || 'pistol', guardX: x, guardY: y,
+    dead: false, lastHit: 99,
   };
-  world.enemies.push(e);
+  state.enemies.push(e);
   return e;
 }
 
-/** Enemy AI + bullet hits, stepped every frame. */
-export function stepCombat(world, dt) {
-  const p = world.player;
-  const pp = playerPos(world);
+export function stepCombat(state, dt) {
+  const p = state.player;
+  p.shootTimer = Math.max(0, p.shootTimer - dt);
+  p.punchTimer = Math.max(0, p.punchTimer - dt);
+  if (p.reloadTimer > 0) {
+    p.reloadTimer -= dt;
+    if (p.reloadTimer <= 0) finishReload(state);
+  }
 
-  // Player bullets vs enemies, peds and cop cars.
-  for (let i = world.bullets.length - 1; i >= 0; i -= 1) {
-    const b = world.bullets[i];
-    if (b.from !== 'player') continue;
-    let hit = false;
-    for (const e of world.enemies) {
-      if (e.dead) continue;
-      if (dist(b.x, b.y, e.x, e.y) < 15) {
-        damageEnemy(world, e, b.damage);
-        hit = true;
-        break;
-      }
+  // Bullets fly, hit buildings, cars, enemies and the player.
+  for (const b of state.bullets) {
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.life -= dt;
+    // Building hit.
+    const hitWall = state.city.colliders.some((c) => b.x > c.x && b.x < c.x + c.w && b.y > c.y && b.y < c.y + c.h);
+    if (hitWall) {
+      b.life = 0;
+      state.particles.push({ x: b.x, y: b.y, vx: 0, vy: 0, life: 0.2, max: 0.2, kind: 'spark', size: 6 });
+      continue;
     }
-    if (!hit) {
-      for (const ped of world.peds) {
-        if (ped.dead) continue;
-        if (dist(b.x, b.y, ped.x, ped.y) < 12) {
-          ped.dead = true;
-          world.stats.kills += 1;
-          addWanted(world, 1, 'a bystander was hit');
-          hit = true;
+    if (b.friendly) {
+      for (const e of state.enemies) {
+        if (e.dead || e.health <= 0) continue;
+        if (dist(b.x, b.y, e.x, e.y) < 16) {
+          hurtEnemy(state, e, b.damage, Math.atan2(b.vy, b.vx));
+          b.life = 0;
           break;
         }
       }
-    }
-    if (!hit) {
-      for (const cop of world.cops) {
-        if (cop.dead) continue;
-        if (dist(b.x, b.y, cop.x, cop.y) < 26) {
-          cop.health -= b.damage;
-          if (cop.health <= 0) {
-            cop.dead = true;
-            spawnParticles(world, cop.x, cop.y, 30, '#ff7a2e', 240, 1, 6);
-            addWanted(world, 1, 'a police car was destroyed');
-          }
-          hit = true;
+      if (b.life <= 0) continue;
+      for (const car of state.cars) {
+        if (car.driver === 'player') continue;
+        if (Math.abs(b.x - car.x) < 22 && Math.abs(b.y - car.y) < 34) {
+          car.health -= b.damage;
+          b.life = 0;
           break;
         }
       }
-    }
-    if (hit) world.bullets.splice(i, 1);
-  }
-
-  // Heli / enemy bullets vs the player.
-  for (let i = world.bullets.length - 1; i >= 0; i -= 1) {
-    const b = world.bullets[i];
-    if (b.from === 'player') continue;
-    const px = p.inCar ? p.inCar.x : p.x;
-    const py = p.inCar ? p.inCar.y : p.y;
-    const r = p.inCar ? 28 : 14;
-    if (dist(b.x, b.y, px, py) < r) {
-      if (p.inCar) p.inCar.health -= b.damage;
-      else damagePlayer(world, b.damage);
-      world.bullets.splice(i, 1);
+    } else {
+      const tx = p.inCar ? p.inCar.x : p.x;
+      const ty = p.inCar ? p.inCar.y : p.y;
+      if (dist(b.x, b.y, tx, ty) < (p.inCar ? 34 : 15)) {
+        if (p.inCar) { p.inCar.health -= b.damage * 0.5; }
+        else damagePlayer(state, b.damage);
+        b.life = 0;
+      }
     }
   }
+  state.bullets = state.bullets.filter((b) => b.life > 0);
 
-  // Enemy movement and shooting.
-  for (const e of world.enemies) {
+  // Enemies: hold ground, strafe, and shoot at the player in range.
+  for (const e of state.enemies) {
     if (e.dead) continue;
-    const d = dist(e.x, e.y, pp.x, pp.y);
-    const seePlayer = d < 520;
-    if (e.state === 'guard') {
-      if (seePlayer && d < 420) e.state = 'chase';
-      // Wander around the post.
-      if (chance(world.rng, dt * 0.3)) e.angle += range(world.rng, -1.2, 1.2);
-      e.x += Math.cos(e.angle) * 22 * dt;
-      e.y += Math.sin(e.angle) * 22 * dt;
-    } else if (e.state === 'chase') {
-      const want = angleTo(e.x, e.y, pp.x, pp.y);
-      e.angle += angleDiff(e.angle, want) * dt * 5;
-      if (d > 60) {
-        const nx = e.x + Math.cos(e.angle) * e.speed * dt;
-        const ny = e.y + Math.sin(e.angle) * e.speed * dt;
-        if (!world.city.hitsBuilding(nx, ny, 12)) { e.x = nx; e.y = ny; }
-      }
-      if (d > 620) e.state = 'guard';
+    e.lastHit += dt;
+    const d = dist(e.x, e.y, p.x, p.y);
+    const want = Math.atan2(p.y - e.y, p.x - e.x);
+    e.angle = want;
+    if (d < 420 && d > 120) {
+      e.x += Math.cos(want) * e.speed * 0.55 * dt;
+      e.y += Math.sin(want) * e.speed * 0.55 * dt;
+    } else if (d <= 120) {
+      e.x -= Math.cos(want) * e.speed * 0.4 * dt;
+      e.y -= Math.sin(want) * e.speed * 0.4 * dt;
     }
-    // Shoot when close enough and roughly facing the player.
+    const fixed = state.city.collideCircle(e.x, e.y, 12);
+    e.x = fixed.x; e.y = fixed.y;
     e.shootTimer -= dt;
-    if (seePlayer && e.shootTimer <= 0 && d < 460) {
-      e.shootTimer = range(world.rng, 0.7, 1.4);
-      const a = angleTo(e.x, e.y, pp.x, pp.y) + range(world.rng, -0.22, 0.22);
-      world.bullets.push({
-        x: e.x + Math.cos(a) * 18, y: e.y + Math.sin(a) * 18,
-        angle: a, speed: 780, life: 0.8, from: 'enemy', damage: e.damage,
+    if (d < 460 && e.shootTimer <= 0) {
+      e.shootTimer = 0.9 + Math.random() * 0.7;
+      const ang = want + (Math.random() - 0.5) * 0.16;
+      state.bullets.push({
+        x: e.x, y: e.y, vx: Math.cos(ang) * 820, vy: Math.sin(ang) * 820,
+        damage: 7, life: 0.6, friendly: false, kind: 'enemy',
       });
-      spawnParticles(world, e.x + Math.cos(a) * 18, e.y + Math.sin(a) * 18, 3, '#ffd76a', 110, 0.15, 2);
+      state.particles.push({ x: e.x + Math.cos(ang) * 20, y: e.y + Math.sin(ang) * 20, vx: 0, vy: 0, life: 0.07, max: 0.07, kind: 'flash', size: 14 });
     }
   }
-  world.enemies = world.enemies.filter((e) => !e.dead || e.health > -100);
+  state.enemies = state.enemies.filter((e) => !e.dead || e.lastHit < 3);
+
+  // Particles age and drift.
+  for (const pt of state.particles) {
+    pt.life -= dt;
+    pt.x += (pt.vx || 0) * dt;
+    pt.y += (pt.vy || 0) * dt;
+    if (pt.kind === 'smoke' || pt.kind === 'fire') pt.size += dt * 22;
+  }
+  state.particles = state.particles.filter((pt) => pt.life > 0);
+  void clamp;
+  void WEAPONS;
 }

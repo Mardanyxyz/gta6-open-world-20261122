@@ -1,38 +1,17 @@
-// Solara Bay — a complete open-world crime game for make.fun's gta6-01 bounty.
-// The program that hands the entry in: it copies this repository's game/ and
-// screenshots/ into the output directory and writes dossier.json with the
-// vendored make.fun library, exactly as the bounty requires. Node 22, standard
-// library only. Outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output:
-//
+// Solara Bay — the program that hands the entry in (Node 22, stdlib only).
+// It copies game/ and screenshots/ from beside this file into /output and
+// writes /output/dossier.json with the vendored make.fun library, exactly as
+// the kit's starter does. Outside the grader, MAKEFUN_OUTPUT_DIR stands in
+// for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
-
-function countEntries(dir) {
-  let total = 0;
-  for (const name of readdirSync(dir)) {
-    total += 1;
-    const full = join(dir, name);
-    if (statSync(full).isDirectory()) total += countEntries(full);
-  }
-  return total;
-}
-
-function dirSize(dir) {
-  let total = 0;
-  for (const name of readdirSync(dir)) {
-    const full = join(dir, name);
-    const st = statSync(full);
-    total += st.isDirectory() ? dirSize(full) : st.size;
-  }
-  return total;
-}
 
 mkdirSync(out, { recursive: true });
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
@@ -41,20 +20,9 @@ if (existsSync(join(here, 'screenshots'))) {
   cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
 }
 
-// Refuse early, with a clear message, what the sealed scorer would refuse:
-// more than 4 screenshots or one over 256 KiB, or a game/ tree over the
-// scorer's caps (993 entries, 48 MiB). The dossier cap shapes the bytes.
-const shots = existsSync(join(here, 'screenshots')) ? readdirSync(join(here, 'screenshots')) : [];
-if (shots.length > 4) throw new Error(`too many screenshots: ${shots.length} (max 4)`);
-for (const name of shots) {
-  const size = statSync(join(here, 'screenshots', name)).size;
-  if (size > 262144) throw new Error(`screenshot ${name} is ${size} bytes (max 262144)`);
-}
-const gameEntries = countEntries(join(here, 'game'));
-if (gameEntries > 993) throw new Error(`game/ has ${gameEntries} entries (max 993)`);
-const gameBytes = dirSize(join(here, 'game'));
-if (gameBytes > 50331648) throw new Error(`game/ is ${gameBytes} bytes (max 50331648)`);
-
+// The scorer's caps: only text_max_bytes shapes the dossier bytes; the rest
+// refuse an entry the scorer would refuse (too many or too large screenshots,
+// too many game files or bytes, or a game path over 1000 bytes).
 writeFileSync(
   join(out, 'dossier.json'),
   buildDossier(out, {
@@ -65,5 +33,3 @@ writeFileSync(
     game_path_max_bytes: 1000,
   }),
 );
-
-console.log(`Solara Bay dossier written to ${out} (${shots.length} screenshots, ${gameEntries} game entries)`);
